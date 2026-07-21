@@ -1,0 +1,28 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated caches
+node_modules/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+coverage/
+.coverage
+
+# Runtime output
+*.log
+*.pid
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local browser and test artifacts
+screenshots/
+test-results/
+playwright-report/
