@@ -202,7 +202,7 @@ git clone https://github.com/antisdream/water_purifier_prototype.git
 cd water_purifier_prototype
 ```
 
-비공개 저장소인 경우 저장소 접근 권한이 있는 GitHub 계정이 필요합니다.
+공개 저장소이므로 별도 GitHub 접근 권한 없이 복제할 수 있습니다.
 
 ### 7.3 로컬 서버 실행
 
