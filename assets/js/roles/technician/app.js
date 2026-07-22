@@ -119,6 +119,43 @@
     return { visit: visit, inquiry: inquiry, product: product, customer: customer };
   }
 
+  function allowedActions(context) {
+    if (!context || !context.inquiry) return [];
+    if (typeof Store.getAllowedActions === "function") {
+      try {
+        var actions = Store.getAllowedActions(context.inquiry.id, ACTOR);
+        if (Array.isArray(actions)) return actions;
+      } catch (error) {
+        return [];
+      }
+    }
+    var inquiry = context.inquiry;
+    return Array.isArray(inquiry.allowedActions) ? inquiry.allowedActions : Array.isArray(inquiry.allowed_actions) ? inquiry.allowed_actions : [];
+  }
+
+  function canDo(context, action) {
+    return allowedActions(context).indexOf(action) >= 0;
+  }
+
+  function usageView(inquiry, result) {
+    var legacy = inquiry && inquiry.usageGuidance || {};
+    result = result || {};
+    return {
+      status: result.usageGuidanceStatus || inquiry.usageGuidanceStatus || legacy.usageGuidanceStatus || result.usageStatus || legacy.usageStatus || "PENDING_CONSULTATION",
+      message: result.usageGuidanceMessage || inquiry.usageGuidanceMessage || legacy.usageGuidanceMessage || legacy.message || "현재 사용 안내를 확인해 주세요.",
+      restrictedWaterTypes: result.restrictedWaterTypes || inquiry.restrictedWaterTypes || legacy.restrictedWaterTypes || [],
+      restrictedFunctions: result.restrictedFunctions || inquiry.restrictedFunctions || legacy.restrictedFunctions || [],
+      basis: result.guidanceBasis || inquiry.guidanceBasis || legacy.guidanceBasis || result.decisionBasis || legacy.decisionBasis || "확인 필요",
+      nextAction: result.nextAction || inquiry.nextAction || legacy.nextAction || "다음 행동 확인 필요",
+      updatedBy: legacy.updatedBy || inquiry.usageGuidanceUpdatedBy,
+      updatedAt: legacy.updatedAt || inquiry.usageGuidanceUpdatedAt
+    };
+  }
+
+  function careSchedule(product) {
+    return product && product.careSchedule || {};
+  }
+
   function assignedTechnicianId(visit, inquiry) {
     return (visit && (visit.technicianId || visit.assignedTechnicianId || visit.staffId)) ||
       (inquiry && inquiry.assignedTechnicianId) || "";
@@ -308,11 +345,12 @@
     var product = context.product || {};
     var customer = context.customer || {};
     var visit = context.visit;
+    var schedule = careSchedule(product);
     var evidences = evidenceForInquiry(snapshot, inquiry);
     var priorities = inspectionPriorities(inquiry);
     var prohibited = prohibitedActions(inquiry);
     var checks = reconfirmChecks(inquiry, product);
-    var canStart = visit.status === "CONFIRMED";
+    var canStart = canDo(context, "START_VISIT") && hasConfirmedPrevisitReport(context);
 
     return renderBackButton() +
       renderPageHeader("TECH-02", "PRE-VISIT REPORT", "방문 상세·사전 점검", "고객에게 다시 묻지 않도록 상담 인계와 공식 근거를 현장 도착 전에 확인합니다.") +
@@ -325,6 +363,9 @@
               identityItem("고객", customer.name || "확인 필요") + identityItem("고객 ID", customer.id || inquiry.customerId) +
               identityItem("구독 ID", product.subscriptionId || customer.subscriptionId || "확인 필요") + identityItem("문의 ID", inquiry.id) +
               identityItem("판매 상품 코드", product.productCode || "확인 필요") + identityItem("공식 매뉴얼 모델", product.manualModel || "확인 필요") +
+              identityItem("관리 유형", product.managementLabel || product.managementType || "확인 필요") + identityItem("사용 시작일", formatDateTime(product.serviceStartDate || product.installedAt)) +
+              identityItem("최근 관리일", formatDateTime(product.lastCareDate || product.lastCareAt)) + identityItem("최근 필터·카트리지 교체일", formatDateTime(product.lastFilterReplacementDate || product.lastFilterChangedAt)) +
+              identityItem("다음 케어 예정일", schedule.nextCareDate || schedule.nextCareAt ? formatDateTime(schedule.nextCareDate || schedule.nextCareAt) : "확인 필요") + identityItem("다음 케어 기준", schedule.nextCareBasis || schedule.sourceType || schedule.note || "기준 미확정") +
             '</div>' +
           '</section>' +
           '<section class="section-card" aria-labelledby="symptom-title">' +
@@ -340,6 +381,7 @@
           '</section>' +
           renderSafetySection(inquiry) +
           renderAiCounselHandoff(inquiry, visit) +
+          renderPrevisitReport(context) +
         '</div>' +
         '<div class="detail-column">' +
           '<section class="section-card" aria-labelledby="priority-title">' +
@@ -349,7 +391,7 @@
             '<ul class="prohibited-list">' + prohibited.map(function (item) { return '<li>' + escapeHTML(item) + '</li>'; }).join("") + '</ul>' +
           '</section>' +
           '<section class="section-card" aria-labelledby="evidence-title">' +
-            '<div class="section-heading"><div><h2 id="evidence-title">공식 점검 근거</h2><p>백엔드 EvidenceCardDTO로 전달된 검증 근거만 표시합니다.</p></div><span class="badge badge--success">검증 완료</span></div>' +
+            '<div class="section-heading"><div><h2 id="evidence-title">공식 점검 근거</h2><p>백엔드 EvidenceCardDTO로 전달된 검증 근거만 표시합니다.</p></div><span class="badge ' + (evidences.length ? 'badge--success">검증 완료' : 'badge--caution">근거 확인 필요') + '</span></div>' +
             '<div class="evidence-stack">' + (evidences.length ? evidences.map(renderEvidence).join("") : renderNoEvidence()) + '</div>' +
           '</section>' +
           '<form id="start-visit-form" class="section-card" data-form="start-visit">' +
@@ -359,7 +401,9 @@
             }).join("") + '</div>' +
             (canStart
               ? '<div class="action-bar"><div class="action-note"><strong>점검 시작 전 최종 확인</strong>시작 후 방문 상태가 ‘점검 진행 중’으로 바뀝니다.</div><button class="button button--primary" type="submit"' + (state.busy ? " disabled" : "") + '>점검 시작</button></div>'
-              : '<div class="action-bar"><div class="action-note"><strong>' + escapeHTML(statusLabel(visit.status)) + '</strong>' + (visit.status === "IN_PROGRESS" ? "현장 점검 결과를 입력해 주세요." : "등록된 방문 결과를 확인할 수 있습니다.") + '</div><button class="button button--primary" type="button" data-action="go-result">' + (visit.status === "IN_PROGRESS" ? "결과 입력" : "결과 보기") + '</button></div>') +
+              : visit.status === "CONFIRMED"
+                ? '<div class="action-bar"><div class="action-note"><strong>사전 리포트 확정 필요</strong>기사 사전 점검 리포트를 검토·확정하면 점검을 시작할 수 있습니다.</div></div>'
+                : '<div class="action-bar"><div class="action-note"><strong>' + escapeHTML(statusLabel(visit.status)) + '</strong>' + (visit.status === "IN_PROGRESS" ? "현장 점검 결과를 입력해 주세요." : "등록된 방문 결과를 확인할 수 있습니다.") + '</div><button class="button button--primary" type="button" data-action="go-result">' + (visit.status === "IN_PROGRESS" ? "결과 입력" : "결과 보기") + '</button></div>') +
           '</form>' +
         '</div>' +
       '</div>';
@@ -423,12 +467,77 @@
     return revision.text || revision.summary || "상담사 수정본 내용 확인 필요";
   }
 
+  function confirmedCounselSummary(inquiry) {
+    var confirmed = inquiry && (inquiry.confirmedConsultationSummary || inquiry.confirmed_consultation_summary || inquiry.consultationSummaryConfirmed);
+    if (!confirmed) return null;
+    if (typeof confirmed === "string") return { text: confirmed, confirmedBy: inquiry.summaryConfirmedBy, confirmedAt: inquiry.summaryConfirmedAt };
+    return {
+      text: confirmed.text || confirmed.summary || confirmed.value || "",
+      confirmedBy: confirmed.confirmedBy || confirmed.confirmed_by || inquiry.summaryConfirmedBy,
+      confirmedAt: confirmed.confirmedAt || confirmed.confirmed_at || inquiry.summaryConfirmedAt
+    };
+  }
+
+  function reportRecord(value) {
+    if (!value) return null;
+    if (typeof value === "string") return { text: value };
+    return {
+      text: value.text || value.summary || value.value || "",
+      editedBy: value.editedBy || value.updatedBy,
+      editedAt: value.editedAt || value.updatedAt,
+      confirmedBy: value.confirmedBy || value.confirmed_by,
+      confirmedAt: value.confirmedAt || value.confirmed_at
+    };
+  }
+
+  function confirmedPrevisitReport(context) {
+    var inquiry = context && context.inquiry || {};
+    var visit = context && context.visit || {};
+    var confirmed = reportRecord(visit.confirmedPrevisitReport || inquiry.confirmedPrevisitReport || inquiry.confirmed_previsit_report);
+    if (!confirmed) return null;
+    confirmed.confirmedBy = confirmed.confirmedBy || visit.previsitReportConfirmedBy || inquiry.previsitReportConfirmedBy || inquiry.previsit_report_confirmed_by;
+    confirmed.confirmedAt = confirmed.confirmedAt || visit.previsitReportConfirmedAt || inquiry.previsitReportConfirmedAt || inquiry.previsit_report_confirmed_at;
+    return confirmed;
+  }
+
+  function hasConfirmedPrevisitReport(context) {
+    var confirmed = confirmedPrevisitReport(context);
+    return Boolean(confirmed && String(confirmed.text || "").trim());
+  }
+
+  function previsitDraft(context) {
+    var inquiry = context.inquiry || {};
+    var visit = context.visit || {};
+    return reportRecord(visit.aiPrevisitReport || inquiry.aiPrevisitReport || inquiry.ai_previsit_report) || {
+      text: ["방문 목적: " + (visit.visitReason || inquiry.symptomLabel || "증상 확인"), "고객 증상: " + (inquiry.description || "원문 확인 필요"), "안전 유의: " + (visit.safetyNotes || "현재 사용 안내 확인")].join("\n")
+    };
+  }
+
+  function renderPrevisitReport(context) {
+    var inquiry = context.inquiry || {};
+    var visit = context.visit || {};
+    var draft = previsitDraft(context);
+    var revision = reportRecord(visit.previsitReportRevision || inquiry.previsitReportRevision || inquiry.previsit_report_revision);
+    var confirmed = confirmedPrevisitReport(context);
+    var canUpdate = canDo(context, "UPDATE_PREVISIT_REPORT");
+    var canConfirm = canDo(context, "CONFIRM_PREVISIT_REPORT");
+    var editable = revision && revision.text || confirmed && confirmed.text || draft.text;
+    return '<section class="section-card" aria-labelledby="previsit-report-title">' +
+      '<div class="section-heading"><div><h2 id="previsit-report-title">AI 기사 사전 점검 리포트</h2><p>실제 고장 원인이 아닌 방문 준비용 초안이며 담당 기사가 검토·확정합니다.</p></div><span class="badge badge--blue">AI 초안</span></div>' +
+      '<blockquote class="quote-box">“' + escapeHTML(draft.text) + '”</blockquote>' +
+      (revision ? '<div class="report-version"><strong>기사 수정본 · 미확정</strong><p>' + escapeHTML(revision.text) + '</p><small>' + escapeHTML((revision.editedBy || "담당 기사") + " · " + formatDateTime(revision.editedAt)) + '</small></div>' : '<div class="source-fallback">기사 수정본이 없습니다. AI 초안을 그대로 확정하거나 현장 준비 정보를 보완하세요.</div>') +
+      (confirmed ? '<div class="report-version is-confirmed"><strong>기사 확정본</strong><p>' + escapeHTML(confirmed.text) + '</p><small>' + escapeHTML((confirmed.confirmedBy || "담당 기사") + " · " + formatDateTime(confirmed.confirmedAt)) + '</small></div>' : '<div class="source-fallback">점검 시작 전 사전 리포트 확정이 필요합니다.</div>') +
+      ((canUpdate || canConfirm) ? '<form data-form="previsit-report" data-visit-id="' + escapeHTML(visit.id) + '"><div class="form-field form-field--full"><label for="previsit-report-text">기사 검토 리포트</label><textarea id="previsit-report-text" name="previsitReportText" maxlength="2000">' + escapeHTML(editable) + '</textarea></div><div class="action-bar"><div class="action-note"><strong>상태 유지 명령</strong>수정·확정은 문의·방문 상태를 변경하지 않습니다.</div><div class="inline-actions">' + (canUpdate ? '<button class="button button--secondary" type="submit" value="UPDATE_PREVISIT_REPORT">수정본 저장</button>' : "") + (canConfirm ? '<button class="button button--primary" type="submit" value="CONFIRM_PREVISIT_REPORT">사전 리포트 확정</button>' : "") + '</div></div><p class="form-error" data-form-error hidden></p></form>' : '<div class="action-note"><strong>조회 전용</strong>현재 담당자와 상태에서 허용된 리포트 작업이 없습니다.</div>') +
+    '</section>';
+  }
+
   function renderAiCounselHandoff(inquiry, visit) {
     var process = inquiry.aiProcess || {};
     var retrieval = process.retrieval || {};
     var revision = inquiry.aiSummaryRevision;
+    var confirmed = confirmedCounselSummary(inquiry);
     var record = inquiry.counselRecord || {};
-    var guidance = inquiry.usageGuidance || {};
+    var guidance = usageView(inquiry);
     var restrictedWater = array(guidance.restrictedWaterTypes).join(", ") || "제한 없음";
     var restrictedFunctions = array(guidance.restrictedFunctions).join(", ") || "제한 없음";
     var revisionEditor = revision && typeof revision === "object" ? (revision.editedBy || revision.updatedBy || "상담사") : "-";
@@ -444,11 +553,11 @@
         '</dl>' +
       '</section>' +
       '<section class="section-card" aria-labelledby="counsel-revision-title">' +
-        '<div class="section-heading"><div><h2 id="counsel-revision-title">상담사 수정 요약</h2><p>AI 원본을 덮어쓰지 않고 별도 이력으로 전달합니다.</p></div>' + (revision ? '<span class="badge badge--success">수정본</span>' : '<span class="badge badge--caution">원본 유지</span>') + '</div>' +
-        '<blockquote class="quote-box">“' + escapeHTML(aiRevisionText(inquiry)) + '”</blockquote>' +
+        '<div class="section-heading"><div><h2 id="counsel-revision-title">상담사 확정 요약</h2><p>확정본을 우선 표시하며 없을 때만 수정본·AI 원본을 참고합니다.</p></div>' + (confirmed ? '<span class="badge badge--success">확정본</span>' : revision ? '<span class="badge badge--caution">미확정 수정본</span>' : '<span class="badge badge--caution">원본 유지</span>') + '</div>' +
+        '<blockquote class="quote-box">“' + escapeHTML(confirmed && confirmed.text || aiRevisionText(inquiry)) + '”</blockquote>' +
         '<dl class="data-list">' +
-          dataRow("수정 담당", revisionEditor) +
-          dataRow("수정 시각", revisionAt ? formatDateTime(revisionAt) : "수정 이력 없음") +
+          dataRow(confirmed ? "확정 담당" : "수정 담당", confirmed && confirmed.confirmedBy || revisionEditor) +
+          dataRow(confirmed ? "확정 시각" : "수정 시각", confirmed && confirmed.confirmedAt ? formatDateTime(confirmed.confirmedAt) : revisionAt ? formatDateTime(revisionAt) : "확정·수정 이력 없음") +
         '</dl>' +
       '</section>' +
       '<section class="section-card" aria-labelledby="counsel-handoff-title">' +
@@ -465,11 +574,12 @@
       '<section class="section-card" aria-labelledby="usage-guidance-title">' +
         '<div class="section-heading"><div><h2 id="usage-guidance-title">현재 사용 안내</h2><p>상담 이후에도 현장에서 유지해야 할 출수·기능 제한입니다.</p></div></div>' +
         '<dl class="data-list">' +
-          dataRow("사용 상태", usageLabel(guidance.usageStatus)) +
+          dataRow("사용 상태", usageLabel(guidance.status)) +
+          dataRow("고객 표시 안내", guidance.message) +
           dataRow("제한 출수", restrictedWater) +
           dataRow("제한 기능", restrictedFunctions) +
-          dataRow("판단 근거", guidance.decisionBasis || "판단 근거 확인 필요") +
-          dataRow("고객의 다음 행동", guidance.nextAction || "다음 행동 확인 필요") +
+          dataRow("판단 근거", guidance.basis) +
+          dataRow("고객의 다음 행동", guidance.nextAction) +
           dataRow("최종 변경", [guidance.updatedBy, guidance.updatedAt ? formatDateTime(guidance.updatedAt) : ""].filter(Boolean).join(" · ") || "변경 이력 없음") +
         '</dl>' +
       '</section>';
@@ -510,11 +620,15 @@
   }
 
   function evidenceForInquiry(snapshot, inquiry) {
-    var ids = array(inquiry.evidenceIds);
-    return array(snapshot.evidenceRegistry).filter(function (item) {
-      var id = item.evidenceId || item.evidence_id || item.id;
-      return ids.indexOf(id) >= 0;
-    });
+    if (typeof Store.getInquiryView === "function") {
+      try {
+        var view = Store.getInquiryView(inquiry.id, ACTOR);
+        if (view && Array.isArray(view.evidenceCards)) return view.evidenceCards;
+      } catch (error) {
+        return [];
+      }
+    }
+    return [];
   }
 
   function evidenceValue(evidence, camel, snake) {
@@ -543,12 +657,12 @@
       ["document_title", evidenceValue(evidence, "documentTitle", "document_title")],
       ["document_version", evidenceValue(evidence, "documentVersion", "document_version")],
       ["page_refs", evidenceValue(evidence, "pageRefs", "page_refs")],
-      ["topic_code", evidenceValue(evidence, "topicCode", "topic_code")],
+      ["section_title", evidenceValue(evidence, "sectionTitle", "section_title")],
       ["evidence_summary", evidenceValue(evidence, "evidenceSummary", "evidence_summary")],
-      ["applicability", evidence.applicability],
-      ["allowed_use", evidenceValue(evidence, "allowedUse", "allowed_use")],
       ["verification_status", evidenceValue(evidence, "verificationStatus", "verification_status")],
       ["source_type", evidenceValue(evidence, "sourceType", "source_type")],
+      ["provider", evidence.provider],
+      ["data_classification", evidenceValue(evidence, "dataClassification", "data_classification")],
       ["source_landing_url", evidenceValue(evidence, "sourceLandingUrl", "source_landing_url")],
       ["source_direct_download_url", evidenceValue(evidence, "sourceDirectDownloadUrl", "source_direct_download_url")],
       ["product_generation", evidenceValue(evidence, "productGeneration", "product_generation")],
@@ -558,7 +672,9 @@
       ["scope_role", evidenceValue(evidence, "scopeRole", "scope_role")],
       ["risk_level", evidenceValue(evidence, "riskLevel", "risk_level")],
       ["requires_consultation", evidenceValue(evidence, "requiresConsultation", "requires_consultation")],
-      ["safe_actions", evidenceValue(evidence, "safeActions", "safe_actions")]
+      ["safe_actions", evidenceValue(evidence, "safeActions", "safe_actions")],
+      ["escalation_conditions", evidenceValue(evidence, "escalationConditions", "escalation_conditions")],
+      ["prohibited_actions", evidenceValue(evidence, "prohibitedActions", "prohibited_actions")]
     ];
     return '<details class="evidence-metadata" open><summary>EvidenceCardDTO 전체 메타데이터</summary><dl class="data-list">' +
       fields.map(function (field) { return dataRow(field[0], evidenceMetadataText(field[1])); }).join("") +
@@ -607,7 +723,9 @@
 
   function requiredResultPresent(visit) {
     var result = visit && visit.result;
-    return Boolean(result && result.actualCause && result.actions && result.usageStatus && result.decisionBasis && result.nextAction);
+    if (!result) return false;
+    var guidance = usageView({}, result);
+    return Boolean(result.actualCause && result.actions && guidance.status && guidance.basis && guidance.nextAction);
   }
 
   function renderResult(snapshot) {
@@ -630,6 +748,8 @@
   function renderResultForm(context) {
     var inquiry = context.inquiry || {};
     var danger = inquiry.riskLevel === "DANGER";
+    var canComplete = canDo(context, "VISIT_COMPLETED");
+    var canRevisit = canDo(context, "REVISIT_NEEDED");
     return '<form id="visit-result-form" class="section-card" data-form="visit-result">' +
       '<div class="section-heading"><div><h2>현장 점검 결과 입력</h2><p>필수값을 모두 입력해야 방문 완료 또는 추가 방문으로 처리할 수 있습니다.</p></div><span class="badge badge--blue">점검 진행 중</span></div>' +
       (danger ? '<div class="source-fallback" style="margin-bottom:16px;">위험 안내는 결과 저장 전까지 해제되지 않습니다. 현장 조치 후 현재 사용 안내 상태를 명확히 선택하세요.</div>' : "") +
@@ -638,13 +758,20 @@
         fieldTextarea("actions", "수행 조치", "점검·조정·교체 등 실제 수행한 조치를 입력하세요.", true) +
         fieldInput("parts", "교체 부품", "교체 없음 또는 부품명·수량", false) +
         '<div class="form-field"><label for="drinking-stop">음용 중지 안내 유지 여부 <span class="required">*</span></label><select id="drinking-stop" name="drinkingStopMaintained" required><option value="">선택하세요</option><option value="true"' + (danger ? " selected" : "") + '>유지 · 안전 확인 전 음용 중지</option><option value="false">해제 · 현장 판단 근거 입력 완료</option></select></div>' +
-        '<div class="form-field"><label for="usage-status">현재 사용 안내 상태 <span class="required">*</span></label><select id="usage-status" name="usageStatus" required><option value="">선택하세요</option><option value="NORMAL">일반 사용 가능</option><option value="PARTIAL_STOP">일부 출수·기능 사용 중지</option><option value="TOTAL_STOP"' + (danger ? " selected" : "") + '>제품 전체 사용 중지</option><option value="PENDING_CONSULTATION">판단 보류·상담 필요</option></select></div>' +
+        '<div class="form-field"><label for="usage-status">현재 사용 안내 상태 <span class="required">*</span></label><select id="usage-status" name="usageGuidanceStatus" required><option value="">선택하세요</option><option value="NORMAL">일반 사용 가능</option><option value="PARTIAL_STOP">일부 출수·기능 사용 중지</option><option value="TOTAL_STOP"' + (danger ? " selected" : "") + '>제품 전체 사용 중지</option><option value="PENDING_CONSULTATION">판단 보류·상담 필요</option></select></div>' +
         '<fieldset class="form-field form-field--full" style="border:0;padding:0;margin:0;"><legend class="field-label">사용 제한 대상 출수·기능</legend><div class="choice-grid">' +
           choiceCheckbox("restrictedWater", "정수", "정수") + choiceCheckbox("restrictedWater", "냉수", "냉수") + choiceCheckbox("restrictedWater", "온수", "온수") + choiceCheckbox("restrictedWater", "전체 출수", "전체 출수", danger) +
         '</div></fieldset>' +
         fieldInput("restrictedFunctionsText", "기타 제한 기능", "예: 순간온수, 냉각 기능", false) +
-        fieldTextarea("decisionBasis", "판단 근거", "공식 근거 페이지와 현장 측정·육안 확인 결과를 함께 입력하세요.", true) +
+        fieldTextarea("usageGuidanceMessage", "고객 표시용 사용 안내", "현재 사용할 수 있는 기능과 제한을 고객이 이해하기 쉽게 입력하세요.", true) +
+        fieldTextarea("guidanceBasis", "판단 근거", "공식 근거 페이지와 현장 측정·육안 확인 결과를 함께 입력하세요.", true) +
         fieldTextarea("nextAction", "고객의 다음 행동", "경과 관찰, 상담 응답, 재방문 준비 등 고객이 할 일을 입력하세요.", true) +
+        '<div class="form-field"><label for="care-history-applied">케어 이력 반영 여부 <span class="required">*</span></label><select id="care-history-applied" name="careHistoryApplied" required><option value="YES">반영</option><option value="NO">미반영·별도 확인</option></select></div>' +
+        '<div class="form-field"><label for="visit-care-date">방문 완료 관리일 <span class="required">*</span></label><input id="visit-care-date" name="visitCompletedCareDate" type="date" value="' + escapeHTML(dateInputValue(new Date())) + '" required></div>' +
+        '<div class="form-field"><label for="filter-replaced">필터·카트리지 교체 여부 <span class="required">*</span></label><select id="filter-replaced" name="filterReplaced" required><option value="NO">교체 없음</option><option value="YES">교체함</option></select></div>' +
+        '<div class="form-field conditional-field" data-filter-items hidden><label for="filter-items">교체 항목 <span class="required">*</span></label><input id="filter-items" name="replacedFilterItems" type="text" placeholder="교체한 필터·카트리지 항목"></div>' +
+        '<div class="form-field"><label for="next-care-date">다음 케어 예정일</label><input id="next-care-date" name="nextCareDate" type="date"></div>' +
+        '<div class="form-field"><label for="next-care-basis">다음 케어 일정 산정 근거 <span class="required">*</span></label><select id="next-care-basis" name="nextCareBasis" required><option value="UNDEFINED">공식·팀 승인 기준 없음</option><option value="OFFICIAL">공식 운영 기준</option><option value="TEAM_RULE">팀 승인 규칙</option></select></div>' +
         '<div class="form-field"><label for="follow-up-counsel">후속 상담</label><select id="follow-up-counsel" name="followUpCounsel"><option value="NONE">필요 없음</option><option value="REQUIRED">상담 후속 확인 필요</option></select></div>' +
         '<div class="form-field"><label for="additional-visit">추가 방문 여부 <span class="required">*</span></label><select id="additional-visit" name="additionalVisit" required><option value="NO">추가 방문 없음</option><option value="YES">추가 방문 필요</option></select></div>' +
         '<div class="form-field form-field--full conditional-field" data-revisit-reason hidden><label for="revisit-reason">추가 방문 사유 <span class="required">*</span></label><textarea id="revisit-reason" name="revisitReason" placeholder="부품 확보, 추가 진단 등 재방문 사유를 입력하세요."></textarea></div>' +
@@ -652,7 +779,7 @@
         fieldInput("signature", "고객 서명 확인", "현장에서 결과를 안내받은 고객 성명", true) +
       '</div>' +
       '<p class="form-error" data-form-error hidden></p>' +
-      '<div class="action-bar"><div class="action-note"><strong>저장 전 확인</strong>추가 방문 선택 시 문의는 ‘추가 방문 필요’, 그 외에는 ‘처리 결과 확인’으로 전환됩니다.</div><button class="button button--primary" type="submit"' + (state.busy ? " disabled" : "") + '>방문 결과 저장</button></div>' +
+      '<div class="action-bar"><div class="action-note"><strong>저장 전 확인</strong>추가 방문 선택 시 문의는 ‘추가 방문 필요’, 그 외에는 ‘처리 결과 확인’으로 전환됩니다.</div><button class="button button--primary" type="submit"' + (state.busy || (!canComplete && !canRevisit) ? " disabled" : "") + '>방문 결과 저장</button></div>' +
     '</form>';
   }
 
@@ -664,6 +791,13 @@
     return '<div class="form-field"><label for="field-' + name + '">' + escapeHTML(label) + (required ? ' <span class="required">*</span>' : "") + '</label><input id="field-' + name + '" name="' + name + '" type="text" placeholder="' + escapeHTML(placeholder) + '"' + (required ? " required" : "") + '></div>';
   }
 
+  function dateInputValue(value) {
+    var date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    var pad = function (number) { return String(number).padStart(2, "0"); };
+    return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate());
+  }
+
   function choiceCheckbox(name, value, label, checked) {
     return '<label class="choice-chip"><input type="checkbox" name="' + escapeHTML(name) + '" value="' + escapeHTML(value) + '"' + (checked ? " checked" : "") + '><span>' + escapeHTML(label) + '</span></label>';
   }
@@ -672,7 +806,8 @@
     var visit = context.visit;
     var inquiry = context.inquiry || {};
     var result = visit.result || {};
-    var restrictions = array(result.restrictedFunctions).join(", ") || "제한 없음";
+    var guidance = usageView(inquiry, result);
+    var restrictions = array(guidance.restrictedFunctions).join(", ") || "제한 없음";
     var feedback = inquiry.resolutionFeedback;
     var feedbackComment = feedback && typeof feedback === "object" ? feedback.comment : "";
 
@@ -684,10 +819,16 @@
             dataRow("실제 원인", result.actualCause) +
             dataRow("수행 조치", result.actions) +
             dataRow("교체 부품", result.parts || "교체 부품 없음") +
-            dataRow("현재 사용 안내", usageLabel(result.usageStatus)) +
+            dataRow("현재 사용 안내", usageLabel(guidance.status)) +
+            dataRow("고객 표시 안내", guidance.message) +
             dataRow("제한 출수·기능", restrictions) +
-            dataRow("판단 근거", result.decisionBasis) +
-            dataRow("고객의 다음 행동", result.nextAction) +
+            dataRow("판단 근거", guidance.basis) +
+            dataRow("고객의 다음 행동", guidance.nextAction) +
+            dataRow("케어 이력 반영", result.careHistoryApplied === false ? "미반영·확인 필요" : "반영") +
+            dataRow("방문 완료 관리일", result.visitCompletedCareDate || visit.completedAt ? formatDateTime(result.visitCompletedCareDate || visit.completedAt) : "확인 필요") +
+            dataRow("필터·카트리지 교체", result.filterReplaced ? array(result.replacedFilterItems).join(", ") || "교체 항목 확인 필요" : "교체 없음") +
+            dataRow("다음 케어 예정일", result.nextCareDate ? formatDateTime(result.nextCareDate) : "확인 필요") +
+            dataRow("다음 케어 산정 근거", result.nextCareBasis || "기준 미확정") +
             dataRow("후속 상담", result.followUpCounsel ? "후속 상담 필요" : "필요 없음") +
             dataRow("특이사항", result.notes || "특이사항 없음") +
             dataRow("고객 서명", result.signature || "서명 정보 없음") +
@@ -711,7 +852,7 @@
       return item && (item.visitId === visit.id || (item.inquiryId === (context.inquiry && context.inquiry.id) && item.productId === product.id));
     });
     var applied = Boolean(visit.careApplied || history);
-    var nextCareAt = schedule.nextCareAt || schedule.nextDate || schedule.plannedAt || null;
+    var nextCareAt = schedule.nextCareDate || schedule.nextCareAt || schedule.nextDate || schedule.plannedAt || null;
     var planningLabel = schedule.label || schedule.status || "다음 일정 확인 필요";
     var appliedAt = visit.careUpdatedAt || (history && history.completedAt) || visit.completedAt;
 
@@ -721,11 +862,12 @@
         dataRow("케어 이력 ID", history && history.id || "연결된 이력 없음") +
         dataRow("반영 상태", applied ? "방문 결과가 케어 이력과 제품 정보에 반영됨" : "시연 초기 완료 건 · 기존 제품 이력 표시") +
         dataRow("반영 시각", appliedAt ? formatDateTime(appliedAt) : "반영 시각 확인 필요") +
-        dataRow("최근 케어일(lastCareAt)", product.lastCareAt ? formatDateTime(product.lastCareAt) : "최근 케어일 없음") +
-        dataRow("최근 필터 교체일", product.lastFilterChangedAt ? formatDateTime(product.lastFilterChangedAt) : "교체 이력 없음") +
+        dataRow("최근 케어일", product.lastCareDate || product.lastCareAt ? formatDateTime(product.lastCareDate || product.lastCareAt) : "최근 케어일 없음") +
+        dataRow("최근 필터·카트리지 교체일", product.lastFilterReplacementDate || product.lastFilterChangedAt ? formatDateTime(product.lastFilterReplacementDate || product.lastFilterChangedAt) : "교체 이력 없음") +
         dataRow("다음 케어 계획", planningLabel + (schedule.status ? " (" + schedule.status + ")" : "")) +
         dataRow("다음 케어 예정일", nextCareAt ? formatDateTime(nextCareAt) : "미정 · 고객과 별도 협의") +
-        dataRow("일정 산정 근거", schedule.note || "일정 산정 근거 확인 필요") +
+        dataRow("일정 산정 근거", schedule.nextCareBasis || schedule.sourceType || schedule.note || "일정 산정 근거 확인 필요") +
+        dataRow("일정 확인 상태", schedule.nextCareStatus || schedule.status || "CONFIRMATION_REQUIRED") +
         dataRow("연결 방문 ID", schedule.lastVisitId || visit.id || "확인 필요") +
       '</dl>' +
     '</section>';
@@ -737,7 +879,7 @@
     if (inquiry.status === "RESOLVED") {
       return '<section class="section-card completion-card"><div class="completion-state"><span aria-hidden="true">✓</span><div><strong>문의 최종 완료</strong><p>방문 결과와 고객 해결 피드백이 확인되었습니다.</p></div></div><span class="badge badge--success">처리 완료</span></section>';
     }
-    if (isFinalPending(context) && requiredResultPresent(visit)) {
+    if (isFinalPending(context) && requiredResultPresent(visit) && canDo(context, "FINALIZE_INQUIRY")) {
       return '<section class="section-card completion-card"><div class="completion-state"><span aria-hidden="true">✓</span><div><strong>고객 해결 피드백: 해결됨</strong><p>상태: 담당자 최종 확인 필요</p></div></div>' +
         (feedbackComment ? '<blockquote class="quote-box">“' + escapeHTML(feedbackComment) + '”</blockquote>' : "") +
         '<button class="button button--primary button--wide" type="button" data-action="finalize-inquiry"' + (state.busy ? " disabled" : "") + '>문의 최종 완료</button></section>';
@@ -772,10 +914,33 @@
     return getSnapshot();
   }
 
+  function handlePrevisitReport(form, eventName) {
+    var snapshot = getSnapshot();
+    var context = selectedContext(snapshot);
+    if (!context || !isAssigned(context)) return showError("현재 기사에게 배정된 방문만 사전 리포트를 처리할 수 있습니다.");
+    if (!canDo(context, eventName)) return showError("현재 상태에서 허용되지 않은 사전 리포트 작업입니다.");
+    var text = String(new FormData(form).get("previsitReportText") || "").trim();
+    if (!text) return setFormError(form, "기사 사전 점검 리포트 내용을 입력해 주세요.");
+    state.busy = true;
+    setFormError(form, "");
+    try {
+      dispatchEvent(eventName, context, { visitId: context.visit.id, text: text });
+      showToast(eventName === "CONFIRM_PREVISIT_REPORT" ? "사전 점검 리포트를 확정했습니다." : "사전 점검 리포트 수정본을 저장했습니다.");
+    } catch (error) {
+      setFormError(form, friendlyError(error, "사전 점검 리포트를 저장하지 못했습니다."));
+      showError(friendlyError(error, "사전 점검 리포트를 저장하지 못했습니다."));
+      state.busy = false;
+      return;
+    }
+    state.busy = false;
+    render();
+  }
+
   function handleStartVisit(form) {
     var snapshot = getSnapshot();
     var context = selectedContext(snapshot);
     if (!context || !isAssigned(context)) return showError("현재 기사에게 배정된 방문만 시작할 수 있습니다.");
+    if (!canDo(context, "START_VISIT") || !hasConfirmedPrevisitReport(context)) return showError("사전 리포트를 확정한 뒤 점검을 시작해 주세요.");
     var checked = Array.from(form.querySelectorAll('input[name="reconfirmed"]:checked')).map(function (input) { return input.value; });
     var total = form.querySelectorAll('input[name="reconfirmed"]').length;
     if (checked.length !== total) return showError("현장 재확인 항목을 모두 확인해 주세요.");
@@ -802,6 +967,8 @@
 
     var data = new FormData(form);
     var additionalVisit = data.get("additionalVisit") === "YES";
+    var eventName = additionalVisit ? "REVISIT_NEEDED" : "VISIT_COMPLETED";
+    if (!canDo(context, eventName)) return showError("현재 상태에서 허용되지 않은 방문 결과 작업입니다.");
     var revisitReason = String(data.get("revisitReason") || "").trim();
     if (additionalVisit && !revisitReason) {
       var reason = form.querySelector('[name="revisitReason"]');
@@ -810,6 +977,12 @@
       reason.setCustomValidity("");
       return;
     }
+    var filterReplaced = data.get("filterReplaced") === "YES";
+    var replacedFilterItems = String(data.get("replacedFilterItems") || "").trim();
+    if (filterReplaced && !replacedFilterItems) return showError("교체한 필터·카트리지 항목을 입력해 주세요.");
+    var nextCareDate = String(data.get("nextCareDate") || "").trim();
+    var nextCareBasis = String(data.get("nextCareBasis") || "UNDEFINED");
+    if (nextCareDate && nextCareBasis === "UNDEFINED") return showError("다음 케어 예정일을 입력하려면 공식 기준 또는 팀 승인 규칙을 선택해 주세요.");
 
     var restrictions = data.getAll("restrictedWater").map(String);
     var customRestriction = String(data.get("restrictedFunctionsText") || "").trim();
@@ -824,10 +997,18 @@
       actions: String(data.get("actions") || "").trim(),
       parts: String(data.get("parts") || "").trim() || "교체 부품 없음",
       drinkingStopMaintained: drinkingStopMaintained,
-      usageStatus: String(data.get("usageStatus") || ""),
+      usageGuidanceStatus: String(data.get("usageGuidanceStatus") || ""),
+      usageGuidanceMessage: String(data.get("usageGuidanceMessage") || "").trim(),
       restrictedFunctions: restrictions,
-      decisionBasis: String(data.get("decisionBasis") || "").trim(),
+      guidanceBasis: String(data.get("guidanceBasis") || "").trim(),
       nextAction: String(data.get("nextAction") || "").trim(),
+      careHistoryApplied: data.get("careHistoryApplied") === "YES",
+      visitCompletedCareDate: String(data.get("visitCompletedCareDate") || ""),
+      filterReplaced: filterReplaced,
+      replacedFilterItems: replacedFilterItems ? replacedFilterItems.split(/[,·]/).map(function (item) { return item.trim(); }).filter(Boolean) : [],
+      nextCareDate: nextCareDate || null,
+      nextCareBasis: nextCareDate ? nextCareBasis : null,
+      nextCareStatus: nextCareDate ? "CONFIRMED" : "CONFIRMATION_REQUIRED",
       followUpCounsel: data.get("followUpCounsel") === "REQUIRED",
       notes: notes || "특이사항 없음",
       signature: String(data.get("signature") || "").trim()
@@ -837,15 +1018,18 @@
     state.busy = true;
     setFormError(form, "");
     form.querySelectorAll("button").forEach(function (button) { button.disabled = true; });
+    var succeeded = false;
     try {
-      dispatchEvent(additionalVisit ? "REVISIT_NEEDED" : "VISIT_COMPLETED", context, fields);
+      dispatchEvent(eventName, context, fields);
+      succeeded = true;
       showToast(additionalVisit ? "추가 방문 필요로 저장했습니다." : "방문 결과를 저장하고 고객 확인을 요청했습니다.");
     } catch (error) {
       setFormError(form, friendlyError(error, "방문 결과를 저장하지 못했습니다."));
       showError(friendlyError(error, "방문 결과를 저장하지 못했습니다."));
     } finally {
       state.busy = false;
-      render();
+      if (succeeded) render();
+      else form.querySelectorAll("button").forEach(function (button) { button.disabled = false; });
     }
   }
 
@@ -854,6 +1038,7 @@
     var context = selectedContext(snapshot);
     if (!context || !isAssigned(context)) return showError("현재 방문 담당 기사만 최종 완료할 수 있습니다.");
     if (!isFinalPending(context) || !requiredResultPresent(context.visit)) return showError("고객 해결 피드백과 방문 결과 필수값을 확인해 주세요.");
+    if (!canDo(context, "FINALIZE_INQUIRY")) return showError("현재 상태에서 문의 최종 완료가 허용되지 않습니다.");
 
     state.busy = true;
     render();
@@ -971,11 +1156,20 @@
   function syncConditionalFields() {
     var select = document.querySelector('[name="additionalVisit"]');
     var field = document.querySelector("[data-revisit-reason]");
-    if (!select || !field) return;
-    var show = select.value === "YES";
-    field.hidden = !show;
-    var textarea = field.querySelector("textarea");
-    if (textarea) textarea.required = show;
+    if (select && field) {
+      var show = select.value === "YES";
+      field.hidden = !show;
+      var textarea = field.querySelector("textarea");
+      if (textarea) textarea.required = show;
+    }
+    var filterSelect = document.querySelector('[name="filterReplaced"]');
+    var filterField = document.querySelector("[data-filter-items]");
+    if (filterSelect && filterField) {
+      var showFilterItems = filterSelect.value === "YES";
+      filterField.hidden = !showFilterItems;
+      var input = filterField.querySelector("input");
+      if (input) input.required = showFilterItems;
+    }
   }
 
   function setView(view) {
@@ -1047,9 +1241,13 @@
       var filter = event.target.getAttribute("data-filter");
       if (filter === "date") { state.dateFilter = event.target.value; render(); }
       if (filter === "status") { state.statusFilter = event.target.value; render(); }
-      if (event.target.name === "additionalVisit") syncConditionalFields();
+      if (event.target.name === "additionalVisit" || event.target.name === "filterReplaced") syncConditionalFields();
     });
     root.addEventListener("submit", function (event) {
+      if (event.target.matches('[data-form="previsit-report"]')) {
+        event.preventDefault();
+        handlePrevisitReport(event.target, event.submitter && event.submitter.value);
+      }
       if (event.target.matches('[data-form="start-visit"]')) {
         event.preventDefault();
         handleStartVisit(event.target);
