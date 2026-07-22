@@ -7,8 +7,8 @@
     return JSON.parse(JSON.stringify(value));
   }
 
-  function stage(code, status, at) {
-    return { stage: code, status: status || "COMPLETED", at: at || new Date().toISOString() };
+  function stage(code, status, at, correlationId) {
+    return { stage: code, status: status || "COMPLETED", at: at || new Date().toISOString(), correlationId: correlationId || null };
   }
 
   function scenarioById(state, id) {
@@ -33,10 +33,11 @@
     var timestamp = now || new Date().toISOString();
     if (!scenario) {
       return {
-        usageStatus: "PENDING_CONSULTATION",
+        usageGuidanceStatus: "PENDING_CONSULTATION",
+        usageGuidanceMessage: "공식 근거를 확인할 수 없어 상담 전까지 임의 조치를 중단해주세요.",
         restrictedWaterTypes: [],
         restrictedFunctions: [],
-        decisionBasis: "현재 MVP 공식 근거 없음",
+        guidanceBasis: "현재 MVP 공식 근거 없음",
         nextAction: "제품 상태를 임의로 판단하지 말고 상담원의 확인을 받아주세요.",
         updatedAt: timestamp,
         updatedBy: "근거 충분성 규칙"
@@ -44,10 +45,11 @@
     }
     if (scenario.id === "SYN-JAC104-004") {
       return {
-        usageStatus: "TOTAL_STOP",
+        usageGuidanceStatus: "TOTAL_STOP",
+        usageGuidanceMessage: "전체 출수를 중지하고 누수 안전조치를 유지해주세요.",
         restrictedWaterTypes: ["정수", "냉수", "온수"],
         restrictedFunctions: ["전체 출수"],
-        decisionBasis: "공식 매뉴얼 누수 안전 항목",
+        guidanceBasis: "공식 매뉴얼 누수 안전 항목",
         nextAction: "원수 밸브를 잠그고 안전하게 가능한 경우 전원을 분리한 뒤 상담을 요청하세요.",
         updatedAt: timestamp,
         updatedBy: "안전 규칙"
@@ -55,20 +57,22 @@
     }
     if (scenario.id === "SYN-JAC104-006") {
       return {
-        usageStatus: "PARTIAL_STOP",
+        usageGuidanceStatus: "PARTIAL_STOP",
+        usageGuidanceMessage: "온수 기능 사용과 출수된 물의 음용을 중지해주세요.",
         restrictedWaterTypes: ["온수"],
         restrictedFunctions: ["순간온수", "온수 출수"],
-        decisionBasis: "공식 매뉴얼 순간온수 모듈 안전 항목",
+        guidanceBasis: "공식 매뉴얼 순간온수 모듈 안전 항목",
         nextAction: "온수와 표시된 이상 기능 사용을 중지하고 출수된 물을 음용하지 않은 채 상담을 요청하세요.",
         updatedAt: timestamp,
         updatedBy: "안전 규칙"
       };
     }
     return {
-      usageStatus: scenario.riskLevel === "CAUTION" ? "PENDING_CONSULTATION" : "NORMAL",
+      usageGuidanceStatus: scenario.riskLevel === "CAUTION" ? "PENDING_CONSULTATION" : "NORMAL",
+      usageGuidanceMessage: scenario.riskLevel === "CAUTION" ? "안내된 확인 후 증상이 계속되면 상담을 요청해주세요." : "공식 점검 순서에 따라 안전하게 확인할 수 있습니다.",
       restrictedWaterTypes: [],
       restrictedFunctions: [],
-      decisionBasis: scenario.riskLevel === "CAUTION" ? "공식 근거 확인 후 상담 조건 판단" : "공식 매뉴얼 점검 항목",
+      guidanceBasis: scenario.riskLevel === "CAUTION" ? "공식 근거 확인 후 상담 조건 판단" : "공식 매뉴얼 점검 항목",
       nextAction: scenario.riskLevel === "CAUTION" ? "안내된 확인 후 증상이 지속되면 상담하세요." : "공식 점검 순서를 따라 확인하세요.",
       updatedAt: timestamp,
       updatedBy: "공식 근거 규칙"
@@ -80,7 +84,13 @@
     return (state.evidenceRegistry || []).filter(function (item) {
       return scenario.evidenceIds.indexOf(item.evidenceId) >= 0 &&
         item.productCode === product.productCode &&
+        item.manualModel === product.manualModel &&
+        item.productGeneration === product.productGeneration &&
+        item.modelFamily === "WPU-JAC104" &&
         item.scopeRole === "mvp_primary" &&
+        item.applicability === "model_exact" &&
+        ["mvp_primary", "mvp_primary_safety"].indexOf(item.allowedUse) >= 0 &&
+        item.dataClassification === "official" &&
         item.verificationStatus === (Config.verifiedEvidenceStatus || "text_and_visual_verified");
     });
   }
@@ -108,16 +118,45 @@
   function run(state, inquiry, product, options) {
     options = options || {};
     var at = options.now || new Date().toISOString();
-    var trace = [stage("STRUCTURING", "COMPLETED", at), stage("CHECKING_MISSING_FIELDS", "COMPLETED", at)];
+    var correlationId = options.correlationId || null;
+    if (Number(inquiry.simulationFailuresRemaining || 0) > 0) {
+      inquiry.simulationFailuresRemaining = Number(inquiry.simulationFailuresRemaining) - 1;
+      var simulatedError = new Error("시연용 RERANKING 단계 실패");
+      simulatedError.code = "AI-FAILED-01";
+      simulatedError.failedStage = "RERANKING";
+      throw simulatedError;
+    }
+    var trace = [stage("STRUCTURING", "COMPLETED", at, correlationId), stage("CHECKING_MISSING_FIELDS", "COMPLETED", at, correlationId)];
     var scenario = scenarioForInput(state, inquiry.symptomCodes, inquiry.description, inquiry.displayCode);
     var missing = missingFields(inquiry, scenario);
 
-    trace.push(stage("SAFETY_CHECK", "COMPLETED", at));
+    trace.push(stage("SAFETY_CHECK", "COMPLETED", at, correlationId));
     var evidence = verifiedEvidence(state, scenario, product);
     var guidance = usageGuidance(scenario, at);
 
     if (scenario && scenario.riskLevel === "DANGER") {
-      trace.push(stage("COMPLETED", "COMPLETED", at));
+      trace.push(stage("RETRIEVING", "COMPLETED", at, correlationId));
+      if (!evidence.length) {
+        guidance.guidanceBasis = "안전 규칙 적용 · 공식 근거 연결 실패";
+        guidance.nextAction = "위험 기능 사용을 중지하고 상담사의 확인을 기다려주세요.";
+        trace.push(stage("RERANKING", "BLOCKED_NO_EVIDENCE", at, correlationId));
+        trace.push(stage("COMPLETED", "NO_EVIDENCE", at, correlationId));
+        return {
+          aiState: "COMPLETED",
+          outcomeEvent: "NO_EVIDENCE",
+          scenario: clone(scenario),
+          evidenceIds: [],
+          missingFields: missing,
+          usageGuidance: guidance,
+          trace: trace,
+          aiSummaryOriginal: summary(inquiry, scenario, []),
+          retrieval: { mode: "DETERMINISTIC_PROTOTYPE", resultCount: 0, verified: false }
+        };
+      }
+      trace.push(stage("RERANKING", "COMPLETED", at, correlationId));
+      trace.push(stage("GENERATING", "COMPLETED", at, correlationId));
+      trace.push(stage("VALIDATING", "COMPLETED", at, correlationId));
+      trace.push(stage("COMPLETED", "COMPLETED", at, correlationId));
       return {
         aiState: "COMPLETED",
         outcomeEvent: "DANGER_DETECTED",
@@ -132,7 +171,7 @@
     }
 
     if (missing.length) {
-      trace.push(stage("COMPLETED", "WAITING_FOR_INPUT", at));
+      trace.push(stage("COMPLETED", "WAITING_FOR_INPUT", at, correlationId));
       return {
         aiState: "COMPLETED",
         outcomeEvent: "ADDITIONAL_INFORMATION_REQUIRED",
@@ -146,9 +185,9 @@
       };
     }
 
-    trace.push(stage("RETRIEVING", "COMPLETED", at));
+    trace.push(stage("RETRIEVING", "COMPLETED", at, correlationId));
     if (!scenario || !evidence.length) {
-      trace.push(stage("COMPLETED", "NO_EVIDENCE", at));
+      trace.push(stage("COMPLETED", "NO_EVIDENCE", at, correlationId));
       return {
         aiState: "COMPLETED",
         outcomeEvent: "NO_EVIDENCE",
@@ -162,10 +201,10 @@
       };
     }
 
-    trace.push(stage("RERANKING", "COMPLETED", at));
-    trace.push(stage("GENERATING", "COMPLETED", at));
-    trace.push(stage("VALIDATING", "COMPLETED", at));
-    trace.push(stage("COMPLETED", "COMPLETED", at));
+    trace.push(stage("RERANKING", "COMPLETED", at, correlationId));
+    trace.push(stage("GENERATING", "COMPLETED", at, correlationId));
+    trace.push(stage("VALIDATING", "COMPLETED", at, correlationId));
+    trace.push(stage("COMPLETED", "COMPLETED", at, correlationId));
     return {
       aiState: "COMPLETED",
       outcomeEvent: "SAFE_GUIDANCE_READY",

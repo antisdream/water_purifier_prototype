@@ -1,6 +1,8 @@
 (function () {
   "use strict";
 
+  // 화면설계서 v13의 MVP 대상만 운영 레지스트리에 둔다.
+  // WPUIAC506은 removed_legacy이므로 레코드 자체를 만들지 않고 model-policy에서 입력을 차단한다.
   var modelRegistry = [
     {
       productCode: "WPUJAC104DWH",
@@ -19,25 +21,17 @@
       scopeRole: "expansion_secondary",
       supportScope: "expansion_secondary",
       supportStatus: "EXPANSION"
-    },
-    {
-      productCode: "WPUIAC506",
-      manualModel: "WPU-IAC506",
-      relatedManualModels: [],
-      productGeneration: "IAC",
-      scopeRole: "archive",
-      supportScope: "archived",
-      supportStatus: "ARCHIVED"
     }
   ];
 
   window.WaterCareConfig = Object.freeze({
-    schemaVersion: "SCREEN-FIX-V6",
-    seedRevision: 4,
-    storageKey: "watercare.prototype.screen-fix-v6",
+    schemaVersion: "SCREEN-DESIGN-V13",
+    seedRevision: 6,
+    storageKey: "watercare.prototype.screen-design-v13",
     primaryProductCode: "WPUJAC104DWH",
     primaryManualModel: "WPU-JAC104D",
     verifiedEvidenceStatus: "text_and_visual_verified",
+    aiMaxRetries: 2,
     modelRegistry: modelRegistry,
     defaultActors: Object.freeze({
       counselor: { role: "COUNSELOR", id: "STAFF-CONS-01", name: "한유진" },
