@@ -97,12 +97,21 @@
     var showInternal = Boolean(options.showInternal);
     var allowPdf = options.allowPdf !== false && Boolean(item.sourceDirectDownloadUrl);
     var pages = item.pageRefs && item.pageRefs.length ? item.pageRefs.join(", ") + "쪽" : "페이지 정보 없음";
+    var staffMetadata = [
+      ["evidence_id", item.evidenceId], ["chunk_id", item.chunkId], ["document_id", item.documentId],
+      ["section_title", item.sectionTitle], ["source_type", item.sourceType], ["provider", item.provider],
+      ["risk_level", item.riskLevel], ["requires_consultation", item.requiresConsultation ? "true" : "false"],
+      ["safe_actions", (item.safeActions || []).join(" · ")], ["escalation_conditions", (item.escalationConditions || []).join(" · ")],
+      ["prohibited_actions", (item.prohibitedActions || []).join(" · ")], ["verification_status", item.verificationStatus],
+      ["product_code", item.productCode], ["manual_model", item.manualModel], ["product_generation", item.productGeneration],
+      ["model_family", item.modelFamily], ["scope_role", item.scopeRole], ["data_classification", item.dataClassification]
+    ].filter(function (entry) { return entry[1] !== null && entry[1] !== undefined && entry[1] !== ""; });
     return '<article class="wc-evidence">' +
       '<div class="wc-evidence__head"><span class="wc-source-tag">공식 매뉴얼</span>' + badge(["공식 근거 확인 완료", "success"]) + '</div>' +
       '<h4>' + escapeHtml(item.documentTitle) + '</h4>' +
       '<dl class="wc-evidence__meta"><div><dt>버전</dt><dd>' + escapeHtml(item.documentVersion) + '</dd></div><div><dt>근거 위치</dt><dd>' + escapeHtml(pages) + '</dd></div></dl>' +
       '<p>' + escapeHtml(item.evidenceSummary) + '</p>' +
-      (showInternal ? '<details><summary>업무용 근거 메타데이터</summary><dl class="wc-evidence__details"><div><dt>evidence_id</dt><dd>' + escapeHtml(item.evidenceId) + '</dd></div><div><dt>chunk_id</dt><dd>' + escapeHtml(item.chunkId) + '</dd></div><div><dt>document_id</dt><dd>' + escapeHtml(item.documentId) + '</dd></div><div><dt>scope_role</dt><dd>' + escapeHtml(item.scopeRole) + '</dd></div><div><dt>applicability</dt><dd>' + escapeHtml(item.applicability) + '</dd></div><div><dt>allowed_use</dt><dd>' + escapeHtml(item.allowedUse) + '</dd></div><div><dt>verification_status</dt><dd>' + escapeHtml(item.verificationStatus) + '</dd></div></dl></details>' : '') +
+      (showInternal ? '<details><summary>업무용 근거 메타데이터</summary><dl class="wc-evidence__details">' + staffMetadata.map(function (entry) { return '<div><dt>' + escapeHtml(entry[0]) + '</dt><dd>' + escapeHtml(entry[1]) + '</dd></div>'; }).join("") + '</dl></details>' : '') +
       '<div class="wc-evidence__actions"><a class="wc-button wc-button--secondary" href="' + escapeHtml(item.sourceLandingUrl) + '" target="_blank" rel="noopener noreferrer">공식 출처 보기</a>' +
       (allowPdf ? '<a class="wc-button wc-button--ghost" href="' + escapeHtml(item.sourceDirectDownloadUrl) + '" target="_blank" rel="noopener noreferrer" data-official-pdf>설명서 PDF 열기</a>' : '') + '</div></article>';
   }
