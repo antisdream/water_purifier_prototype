@@ -1,0 +1,56 @@
+.gateway-v6 { background: radial-gradient(circle at 15% 10%, #edf9f4 0, transparent 32%), var(--wc-ink-50); }
+.gateway-header { display: flex; min-height: 78px; align-items: center; justify-content: space-between; padding: 14px clamp(20px, 5vw, 72px); border-bottom: 1px solid var(--wc-ink-100); background: rgba(255, 255, 255, .88); backdrop-filter: blur(16px); }
+.gateway-brand { display: flex; align-items: center; gap: 12px; }
+.gateway-brand__mark { display: grid; width: 46px; height: 46px; place-items: center; border-radius: 15px; color: var(--wc-ink-950); background: var(--wc-lime); box-shadow: inset 0 -3px rgba(0, 0, 0, .08); font-size: 20px; font-weight: 950; }
+.gateway-brand strong, .gateway-brand small { display: block; }
+.gateway-brand strong { font-size: 17px; letter-spacing: -.04em; }
+.gateway-brand small { margin-top: 2px; color: var(--wc-ink-500); font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+.gateway-status { display: flex; align-items: center; gap: 12px; color: var(--wc-ink-500); font-size: 11px; font-weight: 750; }
+.gateway-status span { display: inline-flex; align-items: center; gap: 6px; }
+.gateway-status i { width: 7px; height: 7px; border-radius: 50%; background: var(--wc-green); box-shadow: 0 0 0 5px rgba(0, 143, 114, .1); }
+.gateway-main { width: min(1280px, calc(100% - 40px)); margin: 0 auto; padding: 56px 0 68px; }
+.gateway-hero { display: grid; align-items: center; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .75fr); gap: clamp(36px, 7vw, 100px); }
+.gateway-eyebrow { margin: 0 0 12px; color: var(--wc-green); font-size: 11px; font-weight: 950; letter-spacing: .18em; }
+.gateway-hero h1 { margin: 0; color: var(--wc-ink-950); font-size: clamp(40px, 5.4vw, 74px); letter-spacing: -.065em; line-height: 1.05; }
+.gateway-hero h1 em { color: var(--wc-green); font-style: normal; }
+.gateway-lead { max-width: 680px; margin: 24px 0 0; color: var(--wc-ink-600); font-size: clamp(15px, 1.5vw, 18px); line-height: 1.8; }
+.gateway-contract { padding: 26px; border: 1px solid #bfdfd5; border-radius: 26px; background: linear-gradient(145deg, white, #eaf8f3); box-shadow: var(--wc-shadow-lg); }
+.gateway-contract > strong { display: block; margin-top: 18px; font-size: 27px; letter-spacing: -.04em; }
+.gateway-contract > p { margin: 5px 0 22px; color: var(--wc-ink-600); font-size: 13px; }
+.gateway-contract dl { display: grid; margin: 0; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.gateway-contract dl div { padding: 13px 8px; border: 1px solid rgba(0, 143, 114, .12); border-radius: 12px; background: rgba(255, 255, 255, .8); text-align: center; }
+.gateway-contract dt { color: var(--wc-ink-500); font-size: 10px; }
+.gateway-contract dd { margin: 4px 0 0; font-size: 17px; font-weight: 900; }
+.gateway-role-section { margin-top: 78px; scroll-margin-top: 20px; }
+.gateway-section-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
+.gateway-section-head h2, .gateway-flow h2 { margin: 0; font-size: clamp(25px, 3vw, 38px); letter-spacing: -.05em; }
+.gateway-section-head > p { max-width: 430px; margin: 0; color: var(--wc-ink-600); font-size: 13px; line-height: 1.65; text-align: right; }
+.gateway-role-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; }
+.gateway-role-card { position: relative; display: flex; min-height: 360px; flex-direction: column; overflow: hidden; padding: 22px; border: 1px solid var(--wc-ink-100); border-radius: 22px; background: white; box-shadow: var(--wc-shadow-sm); transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+.gateway-role-card::before { position: absolute; top: 0; right: 0; left: 0; height: 5px; background: var(--role-color, var(--wc-green)); content: ""; }
+.gateway-role-card:hover { border-color: var(--role-color, var(--wc-green)); box-shadow: var(--wc-shadow-lg); transform: translateY(-5px); }
+.gateway-role-card--customer { --role-color: var(--wc-green); --role-soft: var(--wc-mint); }
+.gateway-role-card--counselor { --role-color: var(--wc-blue); --role-soft: var(--wc-blue-soft); }
+.gateway-role-card--technician { --role-color: #7a4fd1; --role-soft: #f0eaff; }
+.gateway-role-card--operator { --role-color: #445e58; --role-soft: #edf2f1; }
+.gateway-role-card__device { align-self: flex-start; padding: 5px 8px; border-radius: 999px; color: var(--role-color); background: var(--role-soft); font-size: 9px; font-weight: 950; letter-spacing: .08em; }
+.gateway-role-card__icon { display: grid; width: 52px; height: 52px; margin: 22px 0 18px; place-items: center; border-radius: 17px; color: var(--role-color); background: var(--role-soft); font-size: 24px; font-weight: 900; }
+.gateway-role-card small { color: var(--role-color); font-size: 11px; font-weight: 900; }
+.gateway-role-card h3 { margin: 7px 0 10px; font-size: 20px; letter-spacing: -.04em; line-height: 1.35; }
+.gateway-role-card p { margin: 0; color: var(--wc-ink-600); font-size: 12px; line-height: 1.65; }
+.gateway-role-card > strong { margin-top: auto; padding-top: 22px; color: var(--role-color); font-size: 13px; }
+.gateway-role-card__scope { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--wc-ink-100); color: var(--wc-ink-500); font-size: 9px; font-weight: 850; letter-spacing: .06em; }
+.gateway-flow { display: grid; align-items: start; margin-top: 74px; padding: 34px; grid-template-columns: minmax(240px, .65fr) minmax(0, 1.35fr); gap: 42px; border-radius: 26px; color: white; background: var(--wc-ink-950); box-shadow: var(--wc-shadow-lg); }
+.gateway-flow .gateway-eyebrow { color: var(--wc-lime); }
+.gateway-flow ol { display: grid; margin: 0; padding: 0; grid-template-columns: repeat(5, 1fr); gap: 12px; list-style: none; }
+.gateway-flow li { position: relative; padding: 16px 12px; border: 1px solid rgba(255, 255, 255, .12); border-radius: 14px; background: rgba(255, 255, 255, .06); }
+.gateway-flow li:not(:last-child)::after { position: absolute; z-index: 2; top: 27px; right: -11px; color: var(--wc-lime); content: "→"; font-size: 13px; }
+.gateway-flow li span { color: var(--wc-lime); font-size: 10px; font-weight: 900; }
+.gateway-flow li strong { display: block; margin-top: 15px; font-size: 13px; }
+.gateway-flow li p { margin: 5px 0 0; color: #a9bfba; font-size: 10px; line-height: 1.55; }
+.gateway-footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px clamp(20px, 5vw, 72px); border-top: 1px solid var(--wc-ink-100); background: white; }
+.gateway-footer p { margin: 0; color: var(--wc-ink-600); font-size: 12px; }
+.gateway-footer p strong { margin-right: 6px; color: var(--wc-ink-900); }
+@media (max-width: 1050px) { .gateway-role-grid { grid-template-columns: repeat(2, 1fr); } .gateway-role-card { min-height: 330px; } .gateway-flow { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .gateway-header { align-items: flex-start; } .gateway-status { display: none; } .gateway-main { width: min(100% - 28px, 680px); padding-top: 36px; } .gateway-hero { grid-template-columns: 1fr; gap: 28px; } .gateway-hero h1 { font-size: clamp(36px, 12vw, 56px); } .gateway-role-section { margin-top: 54px; } .gateway-section-head { align-items: flex-start; flex-direction: column; gap: 10px; } .gateway-section-head > p { text-align: left; } .gateway-flow ol { grid-template-columns: 1fr; } .gateway-flow li:not(:last-child)::after { top: auto; right: 20px; bottom: -13px; content: "↓"; } }
+@media (max-width: 520px) { .gateway-role-grid { grid-template-columns: 1fr; } .gateway-role-card { min-height: 310px; } .gateway-contract dl { grid-template-columns: 1fr; } .gateway-contract dl div { display: flex; align-items: center; justify-content: space-between; text-align: left; } .gateway-contract dd { margin: 0; } .gateway-flow { padding: 24px 20px; } .gateway-footer { align-items: stretch; flex-direction: column; } }

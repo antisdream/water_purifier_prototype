@@ -3,64 +3,107 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="고객과 관계자가 하나의 문의 데이터를 이어 사용하는 정수기 통합 고객케어 프로토타입">
+  <meta name="description" content="워터케어 ONE JAC104D 고객케어 업무 연계 프로토타입 역할 선택 홈">
   <title>워터케어 ONE · 역할 선택</title>
-  <link rel="stylesheet" href="assets/css/styles.css">
+  <link rel="stylesheet" href="assets/css/fix-base.css">
+  <link rel="stylesheet" href="assets/css/gateway-v6.css">
 </head>
-<body class="gateway-body">
-  <main class="gateway-shell">
-    <section class="gateway-intro" aria-labelledby="gateway-title">
-      <div class="brand brand--light">
-        <span class="brand-mark" aria-hidden="true">W</span>
-        <span><strong>워터케어 ONE</strong><small>정수기 통합 고객케어</small></span>
+<body class="gateway-v6">
+  <a class="wc-skip-link" href="#role-entry">역할 선택으로 이동</a>
+  <div class="wc-synthetic-banner">시연용 합성 데이터 · 실제 고객·계약·일정 정보가 아닙니다.</div>
+
+  <header class="gateway-header">
+    <a class="gateway-brand" href="index.html" aria-label="워터케어 ONE 역할 선택 홈">
+      <span class="gateway-brand__mark" aria-hidden="true">W</span>
+      <span><strong>워터케어 ONE</strong><small>JAC104D Care Workflow</small></span>
+    </a>
+    <div class="gateway-status" aria-label="프로토타입 상태">
+      <span><i aria-hidden="true"></i>4개 역할 공통 상태 연결</span>
+      <span id="gateway-revision">Revision 확인 중</span>
+    </div>
+  </header>
+
+  <main class="gateway-main">
+    <section class="gateway-hero" aria-labelledby="gateway-title">
+      <div>
+        <p class="gateway-eyebrow">SCREEN DESIGN FIX · V6</p>
+        <h1 id="gateway-title">한 번 접수한 정보가<br><em>케어 완료까지</em> 이어집니다.</h1>
+        <p class="gateway-lead">고객의 증상 입력부터 상담, 방문 점검, 고객 피드백과 담당자 최종 완료까지 같은 문의 ID와 상태 이력으로 연결됩니다.</p>
       </div>
-      <div class="gateway-copy">
-        <p class="eyebrow eyebrow--light">CONNECTED CARE WORKFLOW</p>
-        <h1 id="gateway-title">한 번 전달한 정보가<br>케어의 끝까지 이어집니다.</h1>
-        <p>개인·기업 계정의 설치 제품, 상담, 일정 변경, 현장 작업과 고객 확인까지 하나의 서비스 흐름으로 연결합니다.</p>
+      <div class="gateway-contract" aria-label="현재 시연 범위">
+        <span class="wc-source-tag">공식 매뉴얼</span>
+        <strong>WPUJAC104DWH</strong>
+        <p>D 세대 · 방문관리 · 공식 설명서 REV.00</p>
+        <dl>
+          <div><dt>합성 문의</dt><dd id="gateway-inquiry-count">6건</dd></div>
+          <div><dt>공식 근거</dt><dd id="gateway-evidence-count">7건</dd></div>
+          <div><dt>역할 화면</dt><dd>4개</dd></div>
+        </dl>
       </div>
-      <div class="gateway-flow" aria-label="서비스 흐름">
-        <span>고객 문의</span><i aria-hidden="true">→</i><span>AI 문진</span><i aria-hidden="true">→</i><span>상담·일정</span><i aria-hidden="true">→</i><span>현장 작업·서명</span>
-      </div>
-      <p class="gateway-note">본 화면의 고객·제품·처리 기록은 모두 시연용 가상 데이터입니다.</p>
     </section>
 
-    <section class="gateway-roles" aria-labelledby="role-title">
-      <div class="gateway-role-header">
-        <span class="demo-chip">INTERACTIVE PROTOTYPE</span>
-        <h2 id="role-title">사용할 화면을 선택해 주세요</h2>
-        <p>두 화면은 동일한 데이터를 공유합니다. 한 화면에서 처리한 결과를 다른 화면에서 바로 확인할 수 있습니다.</p>
+    <section id="role-entry" class="gateway-role-section" aria-labelledby="role-title">
+      <div class="gateway-section-head">
+        <div><p class="gateway-eyebrow">ROLE ENTRY</p><h2 id="role-title">접속할 역할을 선택하세요</h2></div>
+        <p>각 역할은 독립 화면으로 열립니다. 다른 역할로 이동하려면 이 홈으로 돌아오세요.</p>
       </div>
 
-      <div class="role-cards">
-        <a class="role-card role-card--customer" href="customer.html">
-          <span class="role-card-icon" aria-hidden="true">고객</span>
-          <span class="role-card-content">
-            <small>FOR CUSTOMER</small>
-            <strong>고객 케어</strong>
-            <span>개인·기업 설치 제품, 증상 문의, 방문 일정 변경과 작업 확인서 조회</span>
-          </span>
-          <span class="role-card-arrow" aria-hidden="true">→</span>
+      <nav class="gateway-role-grid" aria-label="역할별 프로토타입 진입">
+        <a class="gateway-role-card gateway-role-card--customer" href="customer.html">
+          <span class="gateway-role-card__device">SMARTPHONE APP</span>
+          <span class="gateway-role-card__icon" aria-hidden="true">◉</span>
+          <div><small>고객</small><h3>내 제품과 문의를 확인해요</h3><p>제품 정보 · 증상 문진 · 공식 안내 · 처리 결과 피드백</p></div>
+          <strong>고객 앱 시작 <span aria-hidden="true">→</span></strong>
+          <span class="gateway-role-card__scope">CUST-01 ~ CUST-06</span>
         </a>
 
-        <a class="role-card role-card--staff" href="stakeholder.html">
-          <span class="role-card-icon" aria-hidden="true">업무</span>
-          <span class="role-card-content">
-            <small>FOR CARE TEAM</small>
-            <strong>관계자 업무</strong>
-            <span>상담 큐, 고객·사업장, 일정 승인, 기사 작업 결과와 고객 서명 관리</span>
-          </span>
-          <span class="role-card-arrow" aria-hidden="true">→</span>
+        <a class="gateway-role-card gateway-role-card--counselor" href="counselor.html">
+          <span class="gateway-role-card__device">PC WEB</span>
+          <span class="gateway-role-card__icon" aria-hidden="true">⌕</span>
+          <div><small>상담원</small><h3>상담 큐와 방문 전환을 처리해요</h3><p>우선순위 큐 · 상담 기록 · 방문 일정 · 상담 경로 최종 완료</p></div>
+          <strong>상담 웹 시작 <span aria-hidden="true">→</span></strong>
+          <span class="gateway-role-card__scope">CONS-01 ~ CONS-03</span>
         </a>
-      </div>
 
-      <div class="gateway-meta">
-        <span><b>5</b> 가상 고객</span>
-        <span><b>2</b> 기업 계정</span>
-        <span><b>3</b> 관계자 역할</span>
-        <span><b>6</b> 설치 제품</span>
-      </div>
+        <a class="gateway-role-card gateway-role-card--technician" href="technician.html">
+          <span class="gateway-role-card__device">TABLET APP</span>
+          <span class="gateway-role-card__icon" aria-hidden="true">◇</span>
+          <div><small>방문기사</small><h3>배정 방문과 현장 결과를 기록해요</h3><p>업무 목록 · 사전 점검 · 현장 시작 · 결과·재방문·최종 완료</p></div>
+          <strong>기사 앱 시작 <span aria-hidden="true">→</span></strong>
+          <span class="gateway-role-card__scope">TECH-01 ~ TECH-03</span>
+        </a>
+
+        <a class="gateway-role-card gateway-role-card--operator" href="operator.html">
+          <span class="gateway-role-card__device">PC WEB</span>
+          <span class="gateway-role-card__icon" aria-hidden="true">▦</span>
+          <div><small>운영직원</small><h3>전체 현황과 예외를 조회해요</h3><p>9개 조건 필터 · 상태 집계 · 상담·방문 전환 · 운영 예외</p></div>
+          <strong>운영 웹 시작 <span aria-hidden="true">→</span></strong>
+          <span class="gateway-role-card__scope">ADMIN-01 · 조회 전용</span>
+        </a>
+      </nav>
+    </section>
+
+    <section class="gateway-flow" aria-labelledby="flow-title">
+      <div><p class="gateway-eyebrow">CONNECTED WORKFLOW</p><h2 id="flow-title">역할은 분리하고, 업무 상태는 연결했습니다.</h2></div>
+      <ol>
+        <li><span>01</span><strong>고객 접수</strong><p>원문과 증상·문진을 저장</p></li>
+        <li><span>02</span><strong>공식 안내</strong><p>검증된 JAC104D 근거 연결</p></li>
+        <li><span>03</span><strong>상담 처리</strong><p>필요 시 방문 일정 확정</p></li>
+        <li><span>04</span><strong>현장 점검</strong><p>원인·조치·사용 상태 기록</p></li>
+        <li><span>05</span><strong>최종 완료</strong><p>고객 피드백 후 담당자 완료</p></li>
+      </ol>
     </section>
   </main>
+
+  <footer class="gateway-footer">
+    <p><strong>프로토타입 안내</strong> 브라우저 로컬 저장소로 네 역할의 작업 상태가 연결됩니다.</p>
+    <button id="reset-demo" class="wc-button wc-button--ghost" type="button">시연 데이터 초기화</button>
+  </footer>
+  <div id="toast" class="wc-toast" role="status" aria-live="polite"></div>
+
+  <script src="assets/js/fix-data.js"></script>
+  <script src="assets/js/fix-store.js"></script>
+  <script src="assets/js/fix-common.js"></script>
+  <script src="assets/js/gateway-v6.js"></script>
 </body>
 </html>
