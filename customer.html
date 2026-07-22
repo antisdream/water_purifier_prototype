@@ -2,155 +2,117 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="워터케어 ONE 고객용 정수기 케어 서비스">
-  <title>워터케어 ONE · 고객 케어</title>
-  <link rel="stylesheet" href="assets/css/styles.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f4c46">
+  <meta name="description" content="워터케어 ONE 고객용 모바일 앱 프로토타입">
+  <title>워터케어 ONE · 고객 앱</title>
+  <link rel="stylesheet" href="assets/css/fix-base.css">
+  <link rel="stylesheet" href="assets/css/customer-mobile.css">
 </head>
-<body class="app-body customer-body">
+<body class="customer-mobile-body">
   <a class="skip-link" href="#customer-main">본문 바로가기</a>
-  <header class="app-header customer-header">
-    <a class="brand" href="index.html" aria-label="워터케어 ONE 역할 선택으로 이동">
-      <span class="brand-mark" aria-hidden="true">W</span>
-      <span><strong>워터케어 ONE</strong><small>고객 케어</small></span>
-    </a>
-    <div id="customer-menu-search" class="global-menu-search" data-menu-search="customer">
-      <form class="global-menu-search-form" role="search" aria-label="고객 메뉴 바로가기 검색">
-        <span class="global-menu-search-icon" aria-hidden="true">⌕</span>
-        <label class="sr-only" for="customer-menu-search-input">메뉴 검색</label>
-        <input id="customer-menu-search-input" data-menu-search-input type="search" autocomplete="off" placeholder="메뉴 검색 · 예: 일정 변경" role="combobox" aria-autocomplete="list" aria-controls="customer-menu-search-results" aria-expanded="false">
-        <kbd aria-hidden="true">/</kbd>
-      </form>
-      <div id="customer-menu-search-results" class="global-menu-search-results" data-menu-search-results role="listbox" aria-label="고객 메뉴 검색 결과" aria-live="polite" hidden></div>
-    </div>
-    <div class="header-actions">
-      <label class="demo-account">
-        <span>시연 고객</span>
-        <select id="customer-switcher" aria-label="시연 고객 변경"></select>
-      </label>
-      <button id="customer-notification-toggle" class="icon-button notification-button" type="button" data-notification-center="customer" data-notification-toggle aria-label="알림, 읽지 않은 알림 없음" aria-haspopup="dialog" aria-controls="customer-notification-panel" aria-expanded="false">
-        <span aria-hidden="true">●</span><b class="notification-badge" data-notification-badge hidden><span data-notification-count>0</span></b>
-      </button>
-      <a class="avatar-button" href="index.html" aria-label="역할 선택으로 이동"><span id="customer-initial">김</span></a>
-    </div>
-  </header>
 
-  <div class="customer-layout">
-    <aside class="customer-sidebar" aria-label="고객 메뉴">
-      <nav class="customer-nav">
-        <button class="nav-button is-active" type="button" data-customer-view="home"><span aria-hidden="true">⌂</span>홈</button>
-        <button class="nav-button" type="button" data-customer-view="product"><span aria-hidden="true">▣</span>내 제품</button>
-        <button class="nav-button" type="button" data-customer-view="schedule"><span aria-hidden="true">▦</span>방문 일정</button>
-        <button class="nav-button" type="button" data-customer-view="inquiries"><span aria-hidden="true">◎</span>문의 내역</button>
-        <button class="nav-button" type="button" data-customer-view="care"><span aria-hidden="true">◇</span>케어 이력</button>
+  <div class="device-stage">
+    <div class="customer-app-shell">
+      <header class="mobile-app-header">
+        <div class="mobile-app-header__top">
+          <a class="home-link" href="index.html" aria-label="역할 선택 홈으로 돌아가기">
+            <span aria-hidden="true">←</span>
+            <span>역할 선택</span>
+          </a>
+          <span class="demo-badge">시연용 합성 데이터</span>
+          <button id="notification-button" class="icon-button" type="button" aria-label="알림 열기" aria-haspopup="dialog" aria-controls="notification-dialog">
+            <span aria-hidden="true">●</span>
+            <strong id="notification-count" hidden>0</strong>
+          </button>
+        </div>
+        <div class="mobile-app-header__identity">
+          <a class="compact-brand" href="index.html" aria-label="워터케어 ONE 역할 선택 홈">
+            <span class="compact-brand__mark" aria-hidden="true">W</span>
+            <span><strong>워터케어 ONE</strong><small>고객 케어</small></span>
+          </a>
+          <label class="profile-switcher">
+            <span class="sr-only">시연 고객 선택</span>
+            <select id="customer-switcher" aria-label="시연 고객 선택"></select>
+          </label>
+        </div>
+      </header>
+
+      <main id="customer-main" class="customer-app-main" tabindex="-1">
+        <div id="customer-view" aria-live="polite" aria-busy="false"></div>
+      </main>
+
+      <nav class="mobile-bottom-nav" aria-label="고객 앱 주요 메뉴">
+        <button type="button" class="is-active" data-route="home" aria-current="page">
+          <span aria-hidden="true">⌂</span><small>홈</small>
+        </button>
+        <button type="button" data-route="product">
+          <span aria-hidden="true">▣</span><small>제품</small>
+        </button>
+        <button type="button" class="mobile-bottom-nav__primary" data-action="start-inquiry">
+          <span aria-hidden="true">＋</span><small>상담</small>
+        </button>
+        <button type="button" data-route="inquiries">
+          <span aria-hidden="true">◎</span><small>문의</small>
+        </button>
+        <button type="button" data-route="schedule">
+          <span aria-hidden="true">□</span><small>일정</small>
+        </button>
       </nav>
-      <div class="sidebar-support">
-        <span aria-hidden="true">?</span>
-        <div><strong>도움이 필요하신가요?</strong><small>평일 09:00–18:00</small></div>
-        <button type="button" data-open-inquiry>상담 요청</button>
-      </div>
-      <div class="prototype-switch">
-        <small>프로토타입 전환</small>
-        <a href="stakeholder.html">관계자 업무 화면 <span aria-hidden="true">↗</span></a>
-      </div>
-    </aside>
-
-    <main id="customer-main" class="customer-main" tabindex="-1">
-      <div id="customer-view" aria-live="polite"></div>
-    </main>
+    </div>
   </div>
 
-  <nav class="customer-bottom-nav" aria-label="모바일 고객 메뉴">
-    <button class="is-active" type="button" data-customer-view="home"><span aria-hidden="true">⌂</span><small>홈</small></button>
-    <button type="button" data-customer-view="product"><span aria-hidden="true">▣</span><small>내 제품</small></button>
-    <button class="bottom-primary" type="button" data-open-inquiry><span aria-hidden="true">＋</span><small>문의하기</small></button>
-    <button type="button" data-customer-view="schedule"><span aria-hidden="true">▦</span><small>방문 일정</small></button>
-    <button type="button" data-customer-view="inquiries"><span aria-hidden="true">◎</span><small>문의 내역</small></button>
-  </nav>
+  <dialog id="notification-dialog" class="mobile-dialog mobile-dialog--sheet" aria-labelledby="notification-title">
+    <div class="mobile-dialog__header">
+      <div><span class="section-kicker">NOTIFICATIONS</span><h2 id="notification-title">알림</h2></div>
+      <button class="dialog-close" type="button" data-dialog-close aria-label="알림 닫기">×</button>
+    </div>
+    <div id="notification-list" class="notification-list" aria-live="polite"></div>
+  </dialog>
 
-  <section id="customer-notification-panel" class="notification-panel notification-panel--customer" data-notification-panel role="dialog" aria-modal="false" aria-labelledby="customer-notification-title" tabindex="-1" hidden>
-    <header class="notification-panel-header">
-      <div><p class="eyebrow">NOTIFICATIONS</p><h2 id="customer-notification-title">알림</h2><p data-notification-panel-summary>새 알림이 없습니다.</p></div>
-      <div class="notification-panel-actions"><button type="button" data-notification-read-all disabled>모두 읽음</button><button class="dialog-close" type="button" data-notification-close aria-label="알림 창 닫기">×</button></div>
-    </header>
-    <ol class="notification-list" data-notification-list aria-label="고객 알림 목록"></ol>
-    <footer class="notification-panel-footer">알림을 선택하면 연결된 문의 또는 일정 화면으로 이동합니다.</footer>
-  </section>
-  <span class="sr-only" data-notification-status role="status" aria-live="polite" aria-atomic="true"></span>
-
-  <dialog id="inquiry-dialog" class="app-dialog">
-    <form id="inquiry-form" method="dialog">
-      <div class="dialog-header">
-        <div><p class="eyebrow">새 문의</p><h2>어떤 점이 불편하신가요?</h2></div>
-        <button class="dialog-close" type="button" data-dialog-close aria-label="문의 창 닫기">×</button>
+  <dialog id="product-dialog" class="mobile-dialog mobile-dialog--sheet" aria-labelledby="product-dialog-title">
+    <form id="product-form">
+      <div class="mobile-dialog__header">
+        <div><span class="section-kicker">MY PRODUCT</span><h2 id="product-dialog-title">제품 정보 수정</h2></div>
+        <button class="dialog-close" type="button" data-dialog-close aria-label="제품 수정 닫기">×</button>
       </div>
-      <p class="dialog-lead">일상적인 표현 그대로 입력해 주세요. 확인이 필요한 내용은 이어서 질문드릴게요.</p>
-      <label class="field-label">문의 제품<select id="inquiry-product" name="productId" required></select></label>
-      <fieldset class="symptom-fieldset">
-        <legend>관련 증상 <small>복수 선택 가능</small></legend>
-        <label><input type="checkbox" name="symptoms" value="LOW_FLOW"><span>출수량 저하</span></label>
-        <label><input type="checkbox" name="symptoms" value="TASTE_ODOR"><span>물맛·냄새</span></label>
-        <label><input type="checkbox" name="symptoms" value="LEAK"><span>누수</span></label>
-        <label><input type="checkbox" name="symptoms" value="TEMPERATURE"><span>온도 이상</span></label>
-      </fieldset>
-      <label class="field-label">증상을 자세히 알려주세요<textarea name="description" rows="5" maxlength="500" placeholder="예: 3일 전부터 냉수와 정수가 평소보다 약하게 나오고 물맛도 조금 이상해요." required></textarea><small><span id="description-count">0</span>/500자</small></label>
-      <div class="safety-inline"><b aria-hidden="true">!</b><p>바닥에 물이 고이거나 전기·화상 위험이 의심되면 제품 사용을 중지하고 상담 연결을 먼저 선택해 주세요.</p></div>
-      <div class="dialog-actions"><button class="button button--ghost" type="button" data-dialog-close>취소</button><button class="button button--primary" id="submit-inquiry" type="submit" value="default">AI 문진 시작</button></div>
-    </form>
-  </dialog>
-
-  <dialog id="product-dialog" class="app-dialog app-dialog--compact">
-    <form id="product-form" method="dialog">
-      <div class="dialog-header"><div><p class="eyebrow">MY PRODUCT</p><h2 id="product-dialog-title">정수기 등록</h2></div><button class="dialog-close" type="button" data-dialog-close aria-label="제품 등록 창 닫기">×</button></div>
-      <p class="dialog-lead">가상 제품 정보는 현재 고객 계정에만 연결되며 고객·관계자 화면에 함께 반영됩니다.</p>
-      <input id="product-edit-id" name="id" type="hidden">
-      <label class="field-label">제품 모델<select id="product-model-id" name="modelId" required></select></label>
-      <label class="field-label">사용 시작일<input name="startedAt" type="date" required></label>
-      <label class="field-label">관리 유형<select name="managementType" required><option value="방문관리형">방문관리형</option><option value="셀프관리형">셀프관리형</option></select></label>
-      <label class="field-label">최근 필터·카트리지 교체일<input name="lastReplacementAt" type="date" required></label>
-      <label class="field-label">설치 공간<input name="installedArea" maxlength="40" placeholder="예: 주방, 1층 다이닝룸" required></label>
-      <label id="product-site-field" class="field-label" hidden>기업 사업장<select id="product-site-id" name="siteId"></select></label>
-      <label class="field-label">자산 번호 <small>기업 고객 선택 입력</small><input name="assetTag" maxlength="30" placeholder="예: GW-MAPO-03"></label>
-      <div class="safety-inline"><b aria-hidden="true">i</b><p>다음 케어일은 최근 교체일을 기준으로 4개월 시연 규칙을 적용합니다. 운영 연동 시 공식 계약 기준으로 재산정해야 합니다.</p></div>
-      <div class="dialog-actions"><button class="button button--ghost" type="button" data-dialog-close>취소</button><button class="button button--primary" type="submit" value="default">제품 정보 저장</button></div>
-    </form>
-  </dialog>
-
-  <dialog id="questionnaire-dialog" class="app-dialog app-dialog--compact">
-    <form id="questionnaire-form" method="dialog">
-      <div class="dialog-header"><div><p class="eyebrow">사전 문진</p><h2>방문 전 제품 상태를 확인해 주세요</h2></div><button class="dialog-close" type="button" data-dialog-close aria-label="사전 문진 창 닫기">×</button></div>
-      <label class="field-label">문진 대상 제품<select id="questionnaire-product" name="productId" required></select></label>
-      <div class="question-stack">
-        <fieldset><legend>현재 출수량은 어떤가요?</legend><label><input type="radio" name="flow" value="NORMAL" required> 평소와 같아요</label><label><input type="radio" name="flow" value="LOW"> 평소보다 약해요</label></fieldset>
-        <fieldset><legend>제품 주변에 물기가 있나요?</legend><label><input type="radio" name="leak" value="NO" required> 없어요</label><label><input type="radio" name="leak" value="YES"> 있어요</label></fieldset>
-        <fieldset><legend>물맛이나 냄새가 달라졌나요?</legend><label><input type="radio" name="taste" value="NO" required> 아니요</label><label><input type="radio" name="taste" value="YES"> 네, 달라졌어요</label></fieldset>
-        <fieldset><legend>냉수·온수 상태는 어떤가요?</legend><label><input type="radio" name="temperature" value="NORMAL" required> 냉수·온수 모두 평소와 같아요</label><label><input type="radio" name="temperature" value="COLD_ISSUE"> 냉수가 충분히 차갑지 않아요</label><label><input type="radio" name="temperature" value="HOT_ISSUE"> 온수가 충분히 뜨겁지 않아요</label><label><input type="radio" name="temperature" value="NOT_USED"> 해당 기능을 사용하지 않았어요</label></fieldset>
-        <fieldset><legend>이미 확인하거나 수행한 조치가 있나요?</legend><label><input type="radio" name="performedActions" value="NONE" required> 아직 수행한 조치가 없어요</label><label><input type="radio" name="performedActions" value="VALVE_CHECK"> 원수 밸브·외부 상태를 확인했어요</label><label><input type="radio" name="performedActions" value="DISPENSE_CHECK"> 충분히 출수한 뒤 다시 확인했어요</label><label><input type="radio" name="performedActions" value="OTHER_SAFE_CHECK"> 안내받은 외부 상태를 확인했어요</label></fieldset>
+      <input id="product-edit-id" name="productId" type="hidden">
+      <div class="fixed-model-callout">
+        <span>지원 모델</span><strong>SK매직 WPU-JAC104D</strong><code>WPUJAC104DWH</code>
       </div>
-      <div class="dialog-actions"><button class="button button--ghost" type="button" data-dialog-close>나중에</button><button class="button button--primary" type="submit" value="default">문진 제출</button></div>
+      <label class="field"><span>사용 시작일</span><input name="startedAt" type="date" required></label>
+      <label class="field"><span>관리 유형</span><select name="managementType" required><option value="VISIT">방문관리</option></select></label>
+      <label class="field"><span>설치 공간</span><input name="installedArea" maxlength="40" required></label>
+      <div class="dialog-actions">
+        <button class="button button--secondary" type="button" data-dialog-close>취소</button>
+        <button class="button button--primary" type="submit">저장</button>
+      </div>
     </form>
   </dialog>
 
-  <dialog id="reschedule-dialog" class="app-dialog app-dialog--compact">
-    <form id="reschedule-form" method="dialog">
-      <div class="dialog-header"><div><p class="eyebrow">방문 일정 변경</p><h2>희망 방문 일정을 알려주세요</h2></div><button class="dialog-close" type="button" data-dialog-close aria-label="일정 변경 창 닫기">×</button></div>
-      <div class="current-appointment-box"><small>현재 확정 일정</small><strong id="current-appointment-time">—</strong><span>변경 승인 전까지 현재 일정이 유지됩니다.</span></div>
-      <input id="reschedule-inquiry-id" name="inquiryId" type="hidden">
-      <label class="field-label">1순위 희망 일시<input id="desired-visit-time" name="desiredAt" type="datetime-local" required></label>
-      <label class="field-label">변경 사유<select name="reasonCode" required><option value="">선택해 주세요</option><option value="PERSONAL_SCHEDULE">개인 일정</option><option value="BUSINESS_SCHEDULE">회사·사무실 일정</option><option value="SITE_ACCESS">사업장 출입 가능 시간</option><option value="OTHER">기타</option></select></label>
-      <label class="field-label">상세 사유<textarea name="reason" rows="3" minlength="5" maxlength="200" placeholder="관계자가 일정을 조정할 수 있도록 사유를 알려주세요." required></textarea></label>
-      <div class="safety-inline"><b aria-hidden="true">i</b><p>일정 변경은 관계자 승인 후 확정됩니다. 위험 문의는 안전을 위해 가능한 가장 빠른 방문 일정을 권장합니다.</p></div>
-      <div class="dialog-actions"><button class="button button--ghost" type="button" data-dialog-close>취소</button><button class="button button--primary" type="submit" value="default">변경 요청 보내기</button></div>
+  <dialog id="reschedule-dialog" class="mobile-dialog mobile-dialog--sheet" aria-labelledby="reschedule-dialog-title">
+    <form id="reschedule-form">
+      <div class="mobile-dialog__header">
+        <div><span class="section-kicker">VISIT SCHEDULE</span><h2 id="reschedule-dialog-title">방문 일정 변경 요청</h2></div>
+        <button class="dialog-close" type="button" data-dialog-close aria-label="일정 변경 닫기">×</button>
+      </div>
+      <input name="inquiryId" type="hidden">
+      <input name="visitId" type="hidden">
+      <div class="fixed-model-callout"><span>현재 확정 일정</span><strong id="current-visit-time">확인 필요</strong><small>요청이 접수되어도 담당자가 확정하기 전까지 기존 일정이 유지됩니다.</small></div>
+      <label class="field"><span>희망 방문일</span><input name="preferredAt" type="datetime-local" required></label>
+      <label class="field"><span>변경 사유</span><select name="reason" required><option value="">선택해주세요</option><option value="개인 일정">개인 일정</option><option value="업무 일정">업무 일정</option><option value="현장 출입 가능 시간">현장 출입 가능 시간</option><option value="기타">기타</option></select></label>
+      <div class="dialog-actions">
+        <button class="button button--secondary" type="button" data-dialog-close>취소</button>
+        <button class="button button--primary" type="submit">변경 요청</button>
+      </div>
     </form>
   </dialog>
 
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="assets/js/mock-data.js"></script>
-  <script src="assets/js/workflow-config.js"></script>
-  <script src="assets/js/store.js"></script>
-  <script src="assets/js/common.js"></script>
-  <script src="assets/js/usage-chart.js"></script>
-  <script src="assets/js/product-viewer.js"></script>
-  <script src="assets/js/customer.js"></script>
+  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="assets/js/fix-data.js"></script>
+  <script src="assets/js/fix-store.js"></script>
+  <script src="assets/js/fix-common.js"></script>
+  <script src="assets/js/customer-app-v6.js"></script>
 </body>
 </html>
