@@ -13,14 +13,14 @@
 | AI 종료 사유 분리 | `SAFE_GUIDANCE_READY`, `DANGER_DETECTED`, `NO_EVIDENCE` | 종료 이벤트·상태·근거 배열 테스트 |
 | 사용 제한 세분화 | 누수 `TOTAL_STOP`, 온수 모듈 `PARTIAL_STOP`, 근거 없음 `PENDING_CONSULTATION` | 시나리오별 상태·판단 근거·다음 행동 테스트 |
 | AI 원본과 사람 수정본 | 상담원 저장 UI, 기사 사전 리포트 | 원본 불변·수정자·수정 시각·권한 테스트 |
-| 근거 메타데이터 정합성 | `verificationStatus=text_and_visual_verified`, `scopeRole`, `applicability`, `allowedUse=null` | 7개 근거 전체 필드·enum 테스트 |
-| 방문 완료 후 케어 반영 | `careHistory`, `lastCareAt`, `careSchedule=PLANNING` | 제품·케어 이력·방문 ID 연계 테스트 |
+| 근거 메타데이터 정합성 | 내부 검증은 `verificationStatus`, `scopeRole`, `applicability`, `allowedUse=mvp_primary`; 화면은 v13 24필드 DTO만 노출 | 7개 근거 전체 필드·enum·화면 DTO 테스트 |
+| 방문 완료 후 케어 반영 | `careHistory`, `lastCareAt`, `lastFilterChangedAt`, 날짜·근거·상태가 분리된 `careSchedule` | 제품·구독·케어 이력·방문 ID 연계 테스트 |
 | 운영 상태 분리 | Inquiry·AI·Visit 필터와 예외·제품지원요청 패널 | 정적 계약·조회 전용 검사 |
 
 ## 그대로 유지한 시연 기능
 
 - 역할 선택 게이트웨이와 역할별 독립 진입
-- 고객 방문 일정 변경 요청
+- 고객 방문 일정 조회 전용(v13 권한 계약에 따라 변경 요청 제거)
 - 방문기사 고객 서명
 - 역할 알림 읽음·상세 이동
 - 고객 전환용 합성 데이터
