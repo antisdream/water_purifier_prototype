@@ -11,14 +11,18 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[1]
 PAGES = ["index.html", "customer.html", "counselor.html", "technician.html", "operator.html", "stakeholder.html"]
 ACTIVE_JS = [
-    "assets/js/fix-data.js",
-    "assets/js/fix-store.js",
-    "assets/js/fix-common.js",
-    "assets/js/gateway-v6.js",
-    "assets/js/customer-app-v6.js",
-    "assets/js/counselor-app-v6.js",
-    "assets/js/technician-app-v6.js",
-    "assets/js/operator-app-v6.js",
+    "assets/js/core/app-config.js",
+    "assets/js/domain/model-policy.js",
+    "assets/js/domain/ai-rag-simulator.js",
+    "assets/js/data/seed-data.js",
+    "assets/js/infrastructure/browser-state-repository.js",
+    "assets/js/core/store.js",
+    "assets/js/ui/common.js",
+    "assets/js/roles/gateway/app.js",
+    "assets/js/roles/customer/app.js",
+    "assets/js/roles/counselor/app.js",
+    "assets/js/roles/technician/app.js",
+    "assets/js/roles/operator/app.js",
 ]
 ACTIVE_CSS = [
     "assets/css/fix-base.css",
@@ -103,7 +107,15 @@ def check_pages() -> None:
         for other in ["customer.html", "counselor.html", "technician.html", "operator.html"]:
             if other != page:
                 assert f'href="{other}"' not in text, f"{page}: direct role switch {other}"
-        for core in ["fix-data.js", "fix-store.js", "fix-common.js"]:
+        for core in [
+            "assets/js/core/app-config.js",
+            "assets/js/domain/model-policy.js",
+            "assets/js/domain/ai-rag-simulator.js",
+            "assets/js/data/seed-data.js",
+            "assets/js/infrastructure/browser-state-repository.js",
+            "assets/js/core/store.js",
+            "assets/js/ui/common.js",
+        ]:
             assert core in text, f"{page}: missing {core}"
 
 
@@ -132,15 +144,16 @@ def check_fix_scope() -> None:
     active_text = "\n".join((ROOT / file).read_text(encoding="utf-8") for file in [
         "index.html", "customer.html", "counselor.html", "technician.html", "operator.html", *ACTIVE_JS
     ])
-    for forbidden in ["WPUIAC425SNW", "WPUJAC115DNW", "DEMO_IOT", "DEMO_METADATA", "smartPreparation", "usageTelemetry"]:
+    for forbidden in ["WPUJAC115DNW", "DEMO_IOT", "DEMO_METADATA", "smartPreparation", "usageTelemetry"]:
         assert forbidden not in active_text, f"active prototype exposes excluded token: {forbidden}"
     assert active_text.count("WPUJAC104DWH") >= 4
+    assert "WPUIAC425SNW" in active_text, "expansion-secondary model contract missing"
     assert "시연용 합성 데이터" in active_text
 
-    customer_js = (ROOT / "assets/js/customer-app-v6.js").read_text(encoding="utf-8")
-    counselor_js = (ROOT / "assets/js/counselor-app-v6.js").read_text(encoding="utf-8")
-    technician_js = (ROOT / "assets/js/technician-app-v6.js").read_text(encoding="utf-8")
-    operator_js = (ROOT / "assets/js/operator-app-v6.js").read_text(encoding="utf-8")
+    customer_js = (ROOT / "assets/js/roles/customer/app.js").read_text(encoding="utf-8")
+    counselor_js = (ROOT / "assets/js/roles/counselor/app.js").read_text(encoding="utf-8")
+    technician_js = (ROOT / "assets/js/roles/technician/app.js").read_text(encoding="utf-8")
+    operator_js = (ROOT / "assets/js/roles/operator/app.js").read_text(encoding="utf-8")
     for screen in ["CUST-01", "CUST-02", "CUST-03", "CUST-04", "CUST-05", "CUST-06"]:
         assert screen in customer_js, screen
     for screen in ["CONS-01", "CONS-02", "CONS-03"]:
@@ -151,6 +164,9 @@ def check_fix_scope() -> None:
         assert "MARK_NOTIFICATION_READ" in source, f"{role}: notification read linkage missing"
     assert "ADMIN-01" in operator_js
     assert "Store.dispatch(" not in operator_js, "operator must remain read-only"
+    assert "SAVE_AI_SUMMARY_REVISION" in counselor_js
+    assert "questionnaireSessionId" in customer_js
+    assert "careHistory" in technician_js
 
 
 def main() -> int:
