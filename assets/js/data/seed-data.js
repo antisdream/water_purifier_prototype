@@ -1,10 +1,13 @@
 (function () {
   "use strict";
 
+  var Config = window.WaterCareConfig || {};
+
   var OFFICIAL_LANDING = "https://www.skintellixservice.com/web/easy/easyMain.do?inputBasicKeyword=WPUJAC104DWH&tabIndex=3";
   var OFFICIAL_PDF = "https://www.skintellixservice.com/common/fileDownloadS3.do?atchPath=cnts&atchNm=50f504a46a3843beb767baa6f9f94548&atchOrgNm=(rev00)%20WPU-JAC104%20(D)%2C%20JCC104%20(D)_User_KO_260428.pdf&atchExtNm=pdf";
 
-  function evidence(id, chunkId, page, topicCode, summary, allowedUse) {
+  function evidence(id, chunkId, page, topicCode, summary, options) {
+    options = options || {};
     return {
       evidenceId: id,
       chunkId: chunkId,
@@ -15,8 +18,8 @@
       topicCode: topicCode,
       evidenceSummary: summary,
       applicability: "model_exact",
-      allowedUse: allowedUse || "mvp_primary",
-      verificationStatus: "OFFICIAL_VERIFIED",
+      allowedUse: options.allowedUse == null ? null : options.allowedUse,
+      verificationStatus: Config.verifiedEvidenceStatus || "text_and_visual_verified",
       sourceType: "official_manual",
       sourceLandingUrl: OFFICIAL_LANDING,
       sourceDirectDownloadUrl: OFFICIAL_PDF,
@@ -24,18 +27,21 @@
       productCode: "WPUJAC104DWH",
       modelFamily: "WPU-JAC104",
       manualModel: "WPU-JAC104D",
-      scopeRole: "mvp_primary"
+      scopeRole: "mvp_primary",
+      riskLevel: options.riskLevel || "GENERAL",
+      requiresConsultation: Boolean(options.requiresConsultation),
+      safeActions: (options.safeActions || []).slice()
     };
   }
 
   var evidenceRegistry = [
-    evidence("EVD-JAC104D-MAN-P37-NO-WATER", "MAN-WPU-JAC104D-P37-NO-WATER", 37, "symptom_no_water", "필터 수명, 수도 단수와 연결 호스 꺾임을 확인합니다. 조치 후에도 출수되지 않으면 원수 밸브를 잠그고 전원을 분리한 뒤 상담합니다."),
-    evidence("EVD-JAC104D-MAN-P37-COLD", "MAN-WPU-JAC104D-P37-COLD-WATER", 37, "symptom_cold_temperature", "전원, 연속 출수량, 냉수 잠금과 방열팬 먼지 필터를 확인합니다. 정상 전원 상태에서 2시간 뒤에도 차갑지 않으면 상담이 필요합니다."),
-    evidence("EVD-JAC104D-MAN-P37-NOISE", "MAN-WPU-JAC104D-P37-NOISE", 37, "symptom_noise", "작동 중 발생하는 일부 팬·밸브·컴프레서 소리는 정상일 수 있습니다. 지나치게 큰 소음이 지속되면 상담합니다."),
-    evidence("EVD-JAC104D-MAN-P38-LEAK", "MAN-WPU-JAC104D-P38-LEAK", 38, "symptom_leak", "제품 누수 시 원수 밸브를 잠그고 전원 플러그를 분리한 뒤 고객상담센터에 연락합니다.", "mvp_primary_safety"),
-    evidence("EVD-JAC104D-MAN-P38-TASTE-ODOR", "MAN-WPU-JAC104D-P38-TASTE-ODOR", 38, "symptom_taste_odor", "미사용 기간을 확인하고 공식 통수 절차를 수행합니다. 조치 후에도 맛·냄새 이상이 지속되면 점검 또는 필터 교체 상담이 필요합니다."),
+    evidence("EVD-JAC104D-MAN-P37-NO-WATER", "MAN-WPU-JAC104D-P37-NO-WATER", 37, "symptom_no_water", "필터 수명, 수도 단수와 연결 호스 꺾임을 확인합니다. 조치 후에도 출수되지 않으면 원수 밸브를 잠그고 전원을 분리한 뒤 상담합니다.", { riskLevel: "CAUTION" }),
+    evidence("EVD-JAC104D-MAN-P37-COLD", "MAN-WPU-JAC104D-P37-COLD-WATER", 37, "symptom_cold_temperature", "전원, 연속 출수량, 냉수 잠금과 방열팬 먼지 필터를 확인합니다. 정상 전원 상태에서 2시간 뒤에도 차갑지 않으면 상담이 필요합니다.", { riskLevel: "CAUTION" }),
+    evidence("EVD-JAC104D-MAN-P37-NOISE", "MAN-WPU-JAC104D-P37-NOISE", 37, "symptom_noise", "작동 중 발생하는 일부 팬·밸브·컴프레서 소리는 정상일 수 있습니다. 지나치게 큰 소음이 지속되면 상담합니다.", { riskLevel: "CAUTION" }),
+    evidence("EVD-JAC104D-MAN-P38-LEAK", "MAN-WPU-JAC104D-P38-LEAK", 38, "symptom_leak", "제품 누수 시 원수 밸브를 잠그고 전원 플러그를 분리한 뒤 고객상담센터에 연락합니다.", { riskLevel: "DANGER", requiresConsultation: true, safeActions: ["원수 밸브 잠금", "안전하게 가능한 경우 전원 분리"] }),
+    evidence("EVD-JAC104D-MAN-P38-TASTE-ODOR", "MAN-WPU-JAC104D-P38-TASTE-ODOR", 38, "symptom_taste_odor", "미사용 기간을 확인하고 공식 통수 절차를 수행합니다. 조치 후에도 맛·냄새 이상이 지속되면 점검 또는 필터 교체 상담이 필요합니다.", { riskLevel: "CAUTION" }),
     evidence("EVD-JAC104D-MAN-P38-LOW-FLOW", "MAN-WPU-JAC104D-P38-LOW-FLOW", 38, "symptom_low_flow", "다른 수전 동시 사용, 필터 수명, 순간온수 가동과 설치 수압을 확인합니다. 필터 교체 후에도 적으면 상담합니다."),
-    evidence("EVD-JAC104D-MAN-P39-HOT-SAFETY", "MAN-WPU-JAC104D-P39-HOT-WATER-SAFETY", 39, "symptom_hot_water_safety", "순간온수 모듈 점검 문구가 표시되면 출수된 물을 음용하지 말고 전기 계통을 직접 수리하지 않은 채 상담합니다.", "mvp_primary_safety")
+    evidence("EVD-JAC104D-MAN-P39-HOT-SAFETY", "MAN-WPU-JAC104D-P39-HOT-WATER-SAFETY", 39, "symptom_hot_water_safety", "순간온수 모듈 점검 문구가 표시되면 출수된 물을 음용하지 말고 전기 계통을 직접 수리하지 않은 채 상담합니다.", { riskLevel: "DANGER", requiresConsultation: true, safeActions: ["온수 사용 중지", "출수된 물 음용 중지", "전기 계통 직접 수리 금지"] })
   ];
 
   var scenarios = [
@@ -69,7 +75,12 @@
         label: index === 2 || index === 5 ? "확인 필요" : "일정 협의 예정",
         sourceType: "team_designed",
         note: "공식 관리 주기 확정 전이므로 팀 운영 규칙으로만 표시합니다."
-      }
+      },
+      supportStatus: "SUPPORTED",
+      supportScope: "mvp_primary",
+      supportMessage: "기본 MVP 공식 문서 검색 범위에 포함된 제품입니다.",
+      aiAllowed: true,
+      searchAllowed: true
     };
   }
 
@@ -86,26 +97,18 @@
     };
   }
 
-  function usageGuidance(risk) {
-    if (risk === "DANGER") {
-      return {
-        usageStatus: "TOTAL_STOP",
-        restrictedWaterTypes: ["정수", "냉수", "온수"],
-        restrictedFunctions: ["전체 출수"],
-        decisionBasis: "공식 매뉴얼 안전 항목",
-        nextAction: "제품 사용을 중지하고 상담·방문 안내를 따르세요.",
-        updatedAt: "2026-07-22T09:00:00+09:00",
-        updatedBy: "안전 규칙"
-      };
+  function usageGuidance(scenario) {
+    if (window.WaterCareAIRAGSimulator) {
+      return window.WaterCareAIRAGSimulator.usageGuidance(scenario, "2026-07-22T09:00:00+09:00");
     }
     return {
-      usageStatus: risk === "CAUTION" ? "PENDING_CONSULTATION" : "NORMAL",
+      usageStatus: "PENDING_CONSULTATION",
       restrictedWaterTypes: [],
       restrictedFunctions: [],
-      decisionBasis: risk === "CAUTION" ? "공식 근거 확인 후 상담 조건 판단" : "공식 매뉴얼 점검 항목",
-      nextAction: risk === "CAUTION" ? "안내된 확인 후 증상이 지속되면 상담하세요." : "공식 점검 순서를 따라 확인하세요.",
+      decisionBasis: "시연 데이터",
+      nextAction: "상담이 필요합니다.",
       updatedAt: "2026-07-22T09:00:00+09:00",
-      updatedBy: "공식 근거 엔진"
+      updatedBy: "시연 데이터"
     };
   }
 
@@ -134,7 +137,7 @@
       missingFields: scenario.missingFields.slice(),
       answers: {},
       evidenceIds: scenario.evidenceIds.slice(),
-      usageGuidance: usageGuidance(scenario.riskLevel),
+      usageGuidance: usageGuidance(scenario),
       safeActions: scenario.riskLevel === "DANGER" ? { waterValveClosed: index === 4, powerDisconnected: true, drinkingStopped: true } : null,
       safetyActionCompleted: scenario.riskLevel === "DANGER" ? index === 4 : null,
       safetyActionRecordedAt: scenario.riskLevel === "DANGER" ? "2026-07-22T" + String(8 + index).padStart(2, "0") + ":04:00+09:00" : null,
@@ -152,6 +155,14 @@
       outcome: null,
       officialSearchFailed: false,
       aiFailureCount: index === 3 ? 1 : 0,
+      aiOutcome: scenario.riskLevel === "DANGER" ? "DANGER_DETECTED" : "SAFE_GUIDANCE_READY",
+      aiSummaryOriginal: scenario.label + " 문의입니다. 고객 원문과 공식 근거 페이지를 상담 전에 확인해야 합니다.",
+      aiSummaryRevision: null,
+      aiProcess: {
+        mode: "DETERMINISTIC_PROTOTYPE",
+        trace: [{ stage: "COMPLETED", status: "COMPLETED", at: "2026-07-22T09:00:00+09:00" }],
+        retrieval: { mode: "DETERMINISTIC_PROTOTYPE", resultCount: scenario.evidenceIds.length, verified: true }
+      },
       timeline: [
         { at: "2026-07-22T" + String(8 + index).padStart(2, "0") + ":00:00+09:00", actor: "합성 고객 " + n, event: "SUBMIT_SYMPTOM", label: "증상과 문진 답변을 제출했습니다." },
         { at: "2026-07-22T" + String(8 + index).padStart(2, "0") + ":02:00+09:00", actor: "AI 안내", event: "AI_GUIDANCE_COMPLETED", label: "공식 근거 기반 안내를 생성했습니다." }
@@ -224,8 +235,8 @@
 
   window.WATERCARE_FIX_SEED = {
     meta: {
-      schemaVersion: "SCREEN-FIX-V6",
-      seedRevision: 3,
+      schemaVersion: Config.schemaVersion || "SCREEN-FIX-V6",
+      seedRevision: Config.seedRevision || 4,
       seededAt: "2026-07-22T09:00:00+09:00",
       revision: 1,
       disclaimer: "모든 고객·제품·문의·일정 정보는 시연용 합성 데이터입니다.",
@@ -248,6 +259,12 @@
     ],
     customers: [1, 2, 3, 4, 5, 6].map(customer),
     products: [1, 2, 3, 4, 5, 6].map(product),
+    questionnaireSessions: [
+      { id: "DEMO-QNR-001", customerId: "DEMO-CUST-001", productId: "DEMO-PROD-001", inquiryId: null, entryMode: "CARE_PRECHECK", questionnaireStatus: "UNANSWERED", answers: {}, symptomCodes: [], description: "", conditions: "", displayCode: "", stateVersion: 1, createdAt: "2026-07-22T08:20:00+09:00", updatedAt: "2026-07-22T08:20:00+09:00" },
+      { id: "DEMO-QNR-005", customerId: "DEMO-CUST-005", productId: "DEMO-PROD-005", inquiryId: null, entryMode: "CARE_PRECHECK", questionnaireStatus: "UNANSWERED", answers: {}, symptomCodes: [], description: "", conditions: "", displayCode: "", stateVersion: 1, createdAt: "2026-07-22T08:40:00+09:00", updatedAt: "2026-07-22T08:40:00+09:00" }
+    ],
+    careHistory: [],
+    productSupportRequests: [],
     scenarios: scenarios,
     evidenceRegistry: evidenceRegistry,
     inquiries: inquiries,

@@ -91,7 +91,7 @@
 
   function evidenceCard(item, options) {
     options = options || {};
-    if (!item || item.verificationStatus !== "OFFICIAL_VERIFIED") {
+    if (!item || ["text_and_visual_verified", "OFFICIAL_VERIFIED"].indexOf(item.verificationStatus) < 0) {
       return '<article class="wc-evidence wc-evidence--held"><span class="wc-source-tag wc-source-tag--held">사용 보류</span><h4>검증된 공식 근거가 없습니다.</h4><p>임의 안내를 제공하지 않고 상담으로 연결합니다.</p></article>';
     }
     var showInternal = Boolean(options.showInternal);
@@ -102,7 +102,7 @@
       '<h4>' + escapeHtml(item.documentTitle) + '</h4>' +
       '<dl class="wc-evidence__meta"><div><dt>버전</dt><dd>' + escapeHtml(item.documentVersion) + '</dd></div><div><dt>근거 위치</dt><dd>' + escapeHtml(pages) + '</dd></div></dl>' +
       '<p>' + escapeHtml(item.evidenceSummary) + '</p>' +
-      (showInternal ? '<details><summary>업무용 근거 메타데이터</summary><dl class="wc-evidence__details"><div><dt>evidence_id</dt><dd>' + escapeHtml(item.evidenceId) + '</dd></div><div><dt>document_id</dt><dd>' + escapeHtml(item.documentId) + '</dd></div><div><dt>product_generation</dt><dd>' + escapeHtml(item.productGeneration) + '</dd></div><div><dt>allowed_use</dt><dd>' + escapeHtml(item.allowedUse) + '</dd></div></dl></details>' : '') +
+      (showInternal ? '<details><summary>업무용 근거 메타데이터</summary><dl class="wc-evidence__details"><div><dt>evidence_id</dt><dd>' + escapeHtml(item.evidenceId) + '</dd></div><div><dt>chunk_id</dt><dd>' + escapeHtml(item.chunkId) + '</dd></div><div><dt>document_id</dt><dd>' + escapeHtml(item.documentId) + '</dd></div><div><dt>scope_role</dt><dd>' + escapeHtml(item.scopeRole) + '</dd></div><div><dt>applicability</dt><dd>' + escapeHtml(item.applicability) + '</dd></div><div><dt>allowed_use</dt><dd>' + escapeHtml(item.allowedUse) + '</dd></div><div><dt>verification_status</dt><dd>' + escapeHtml(item.verificationStatus) + '</dd></div></dl></details>' : '') +
       '<div class="wc-evidence__actions"><a class="wc-button wc-button--secondary" href="' + escapeHtml(item.sourceLandingUrl) + '" target="_blank" rel="noopener noreferrer">공식 출처 보기</a>' +
       (allowPdf ? '<a class="wc-button wc-button--ghost" href="' + escapeHtml(item.sourceDirectDownloadUrl) + '" target="_blank" rel="noopener noreferrer" data-official-pdf>설명서 PDF 열기</a>' : '') + '</div></article>';
   }
