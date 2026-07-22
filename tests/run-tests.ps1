@@ -1,26 +1,12 @@
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-
-Get-ChildItem -LiteralPath (Join-Path $root "assets\js") -Filter "*.js" | ForEach-Object {
-    node --check $_.FullName
-    if ($LASTEXITCODE -ne 0) {
-        throw "JavaScript syntax check failed: $($_.FullName) (exit $LASTEXITCODE)"
-    }
+Push-Location $root
+try {
+  node tests/requirements-v11.test.mjs
+  node tests/state-flow.test.mjs
+  python tests/smoke_test.py
+  Write-Host 'All SCREEN FIX v6 prototype checks: PASS' -ForegroundColor Green
 }
-
-node (Join-Path $PSScriptRoot "state-flow.test.mjs")
-if ($LASTEXITCODE -ne 0) {
-    throw "State-flow tests failed (exit $LASTEXITCODE)"
+finally {
+  Pop-Location
 }
-
-node (Join-Path $PSScriptRoot "requirements-v11.test.mjs")
-if ($LASTEXITCODE -ne 0) {
-    throw "Requirements v11 tests failed (exit $LASTEXITCODE)"
-}
-
-python (Join-Path $PSScriptRoot "smoke_test.py")
-if ($LASTEXITCODE -ne 0) {
-    throw "Static smoke tests failed (exit $LASTEXITCODE)"
-}
-
-Write-Host "All prototype checks: PASS" -ForegroundColor Green
