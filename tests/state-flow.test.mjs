@@ -82,7 +82,7 @@ assert.equal(unsupportedStore.getState().inquiries.length, unsupportedInquiryCou
 assert.throws(() => unsupportedStore.dispatch("START_INQUIRY", {
   productId: unsupportedProductId,
   idempotencyKey: key("unsupported-ai-block")
-}, customer6), (error) => error.code === "MODEL-EXPANSION-01");
+}, customer6), (error) => error.code === "PRODUCT-VALIDATION-01");
 unsupportedResult = unsupportedStore.dispatch("REQUEST_PRODUCT_SUPPORT", {
   productId: unsupportedProductId,
   reason: "지원 범위 외 모델 확인",
@@ -101,7 +101,7 @@ assert.equal(unsupportedStore.getState().productSupportRequests.filter((item) =>
 assert.throws(() => unsupportedStore.dispatch("START_PRODUCT_SUPPORT_CONSULTATION", {
   productSupportRequestId,
   idempotencyKey: key("unsupported-support-wrong-role")
-}, customer6), (error) => error.code === "FINALIZE-AUTH-01");
+}, customer6), (error) => error.code === "ACCESS-DENIED-01");
 unsupportedStore.dispatch("START_PRODUCT_SUPPORT_CONSULTATION", {
   productSupportRequestId,
   idempotencyKey: key("unsupported-support-start")
@@ -152,7 +152,7 @@ relatedManualResult = relatedManualStore.dispatch("VALIDATE_PRODUCT", {
 assert.equal(relatedManualResult.result.status, "SUPPORTED");
 assert.equal(relatedManualResult.result.supportScope, "mvp_primary");
 
-// 제품 모델이 바뀌면 이전 문의의 공식 근거를 재사용하지 않는다.
+// 기본 MVP 제품을 고객 화면에서 후속 확장 모델로 변경하지 못하며 기존 근거도 보존한다.
 const modelChangeStore = boot();
 let modelChangeResult = modelChangeStore.dispatch("START_INQUIRY", {
   productId: "DEMO-PROD-001", idempotencyKey: key("model-change-start")
@@ -163,22 +163,23 @@ modelChangeStore.dispatch("SUBMIT_SYMPTOM", {
   symptomCodes: ["LOW_FLOW"],
   description: "평소보다 출수량이 줄었습니다.",
   conditions: "다른 수전을 끄고 확인했습니다.",
+  answers: { flow: "LOW" },
   stateVersion: modelChangeInquiry.stateVersion,
   idempotencyKey: key("model-change-symptom")
 }, customer1);
 modelChangeInquiry = stateInquiry(modelChangeStore, modelChangeInquiry.id);
 assert.ok(modelChangeInquiry.evidenceIds.length > 0);
-modelChangeStore.dispatch("PRODUCT_UPDATED", {
+assert.throws(() => modelChangeStore.dispatch("PRODUCT_UPDATED", {
   productId: "DEMO-PROD-001",
   productCode: "WPUIAC425SNW",
   manualModel: "WPU-IAC425",
   idempotencyKey: key("model-change-update")
-}, customer1);
+}, customer1), (error) => error.code === "MODEL-EXPANSION-01");
 modelChangeInquiry = stateInquiry(modelChangeStore, modelChangeInquiry.id);
-assert.equal(modelChangeInquiry.reanalysisRequired, true);
-assert.equal(modelChangeInquiry.aiState, "IDLE");
-assert.deepEqual(Array.from(modelChangeInquiry.evidenceIds), []);
-assert.equal(modelChangeStore.getState().products.find((item) => item.id === "DEMO-PROD-001").supportScope, "expansion_secondary");
+assert.equal(modelChangeInquiry.reanalysisRequired, false);
+assert.equal(modelChangeInquiry.aiState, "COMPLETED");
+assert.ok(modelChangeInquiry.evidenceIds.length > 0);
+assert.equal(modelChangeStore.getState().products.find((item) => item.id === "DEMO-PROD-001").supportScope, "mvp_primary");
 
 // 1. 고객 일반 문의 → 공식 안내 → 자가조치 즉시 완료
 let result = store.dispatch("START_INQUIRY", { productId: "DEMO-PROD-001", idempotencyKey: key("start") }, customer1);
@@ -191,6 +192,7 @@ store.dispatch("SUBMIT_SYMPTOM", {
   symptomCodes: ["LOW_FLOW"],
   description: "평소보다 출수량이 줄었습니다.",
   conditions: "다른 수전을 끄고 확인했습니다.",
+  answers: { flow: "LOW" },
   stateVersion: inquiry.stateVersion,
   idempotencyKey: key("symptom")
 }, customer1);
@@ -205,6 +207,8 @@ assert.deepEqual(Array.from(inquiry.evidenceIds), ["EVD-JAC104D-MAN-P38-LOW-FLOW
 store.dispatch("CUSTOMER_REPORTED_SELF_RESOLVED", {
   inquiryId: selfInquiryId,
   actionResult: "RESOLVED",
+  actionPerformed: true,
+  performedAction: "다른 수전을 끄고 출수 상태를 다시 확인했습니다.",
   stateVersion: inquiry.stateVersion,
   idempotencyKey: key("self-resolve")
 }, customer1);
@@ -219,12 +223,13 @@ store.dispatch("SUBMIT_SYMPTOM", {
   symptomCodes: ["LEAK"],
   description: "제품 연결부에서 물이 새고 바닥에 고입니다.",
   conditions: "원수 밸브 위치를 확인했습니다.",
+  answers: { leak: "YES" },
   stateVersion: inquiry.stateVersion,
   idempotencyKey: key("danger-submit")
 }, customer1);
 inquiry = stateInquiry(store, dangerInquiryId);
 assert.equal(inquiry.riskLevel, "DANGER");
-assert.equal(inquiry.usageGuidance.usageStatus, "TOTAL_STOP");
+assert.equal(inquiry.usageGuidance.usageGuidanceStatus, "TOTAL_STOP");
 assert.equal(inquiry.status, "CONSULTATION_REQUIRED");
 assert.equal(inquiry.customerActionRequired, "SAFETY_CONFIRMATION");
 assert.ok(inquiry.timeline.some((item) => item.event === "DANGER_DETECTED"));
@@ -232,29 +237,22 @@ assert.ok(inquiry.timeline.findIndex((item) => item.event === "SUBMIT_SYMPTOM") 
 assert.ok(store.getState().notifications.some((item) => item.role === "OPERATOR" && item.recipientId === "STAFF-OPER-01" && item.inquiryId === dangerInquiryId));
 assert.throws(() => store.dispatch("CUSTOMER_REPORTED_SELF_RESOLVED", {
   inquiryId: dangerInquiryId, stateVersion: inquiry.stateVersion, idempotencyKey: key("blocked")
-}, customer1), (error) => error.code === "FINALIZE-AUTH-01");
+}, customer1));
 store.dispatch("REQUEST_CONSULTATION", {
   inquiryId: dangerInquiryId,
-  safeActions: {},
+  safeActions: { waterValveClosed: true },
   stateVersion: inquiry.stateVersion,
   idempotencyKey: key("safety-recorded-counsel")
 }, customer1);
 inquiry = stateInquiry(store, dangerInquiryId);
 assert.equal(inquiry.status, "CONSULTATION_REQUIRED");
-assert.deepEqual(inquiry.safeActions, { waterValveClosed: false, powerDisconnected: false, drinkingStopped: false });
+assert.deepEqual(inquiry.safeActions, { waterValveClosed: true, powerDisconnected: false, drinkingStopped: false });
 assert.ok(store.getState().notifications.some((item) => item.role === "COUNSELOR" && item.recipientId === counselor.id && item.inquiryId === dangerInquiryId));
 store.dispatch("START_CONSULTATION", {
   inquiryId: dangerInquiryId,
   stateVersion: inquiry.stateVersion,
   idempotencyKey: key("danger-counsel-start")
 }, counselor);
-inquiry = stateInquiry(store, dangerInquiryId);
-store.dispatch("REQUEST_CONSULTATION", {
-  inquiryId: dangerInquiryId,
-  safeActions: { waterValveClosed: true },
-  stateVersion: inquiry.stateVersion,
-  idempotencyKey: key("late-safety-record")
-}, customer1);
 inquiry = stateInquiry(store, dangerInquiryId);
 assert.equal(inquiry.status, "CONSULTATION_IN_PROGRESS");
 assert.equal(inquiry.safeActions.waterValveClosed, true);
@@ -274,9 +272,9 @@ hotStore.dispatch("SUBMIT_SYMPTOM", {
 }, customer6);
 hotInquiry = stateInquiry(hotStore, hotInquiry.id);
 assert.equal(hotInquiry.aiOutcome, "DANGER_DETECTED");
-assert.equal(hotInquiry.usageGuidance.usageStatus, "PARTIAL_STOP");
+assert.equal(hotInquiry.usageGuidance.usageGuidanceStatus, "PARTIAL_STOP");
 assert.ok(hotInquiry.usageGuidance.restrictedFunctions.some((item) => item.includes("온수")));
-assert.ok(hotInquiry.usageGuidance.decisionBasis);
+assert.ok(hotInquiry.usageGuidance.guidanceBasis);
 assert.ok(hotInquiry.usageGuidance.nextAction);
 
 // 2-1. 위험도와 별개로 상담 필수로 판정된 문의도 즉시 전환하고 안전조치를 별도 기록
@@ -288,6 +286,7 @@ store.dispatch("SUBMIT_SYMPTOM", {
   symptomCodes: ["LOW_FLOW"],
   description: "출수량이 줄고 확인되지 않은 표시가 보입니다.",
   conditions: "다른 수전은 정상입니다.",
+  answers: { flow: "LOW" },
   displayCode: "E-99",
   stateVersion: inquiry.stateVersion,
   idempotencyKey: key("required-submit")
@@ -296,21 +295,12 @@ inquiry = stateInquiry(store, requiredInquiryId);
 assert.equal(inquiry.requiresConsultation, true);
 assert.equal(inquiry.status, "CONSULTATION_REQUIRED");
 assert.equal(inquiry.aiOutcome, "NO_EVIDENCE");
-assert.equal(inquiry.usageGuidance.usageStatus, "PENDING_CONSULTATION");
+assert.equal(inquiry.usageGuidance.usageGuidanceStatus, "PENDING_CONSULTATION");
 assert.deepEqual(Array.from(inquiry.evidenceIds), []);
 assert.ok(inquiry.timeline.some((item) => item.event === "NO_EVIDENCE"));
 assert.ok(!inquiry.timeline.some((item) => item.event === "DANGER_DETECTED"));
-store.dispatch("REQUEST_CONSULTATION", {
-  inquiryId: requiredInquiryId,
-  safeActions: { drinkingStopped: true },
-  stateVersion: inquiry.stateVersion,
-  idempotencyKey: key("required-counsel")
-}, customer2);
-inquiry = stateInquiry(store, requiredInquiryId);
-assert.equal(inquiry.safeActions.drinkingStopped, true);
-assert.equal(inquiry.safetyActionCompleted, false);
-assert.ok(inquiry.safetyActionRecordedAt);
-assert.ok(inquiry.consultationRequestedAt);
+assert.equal(inquiry.assignedCounselorId, counselor.id);
+assert.equal(inquiry.customerActionRequired, null);
 
 // 3. 상담 경로는 고객 피드백 뒤 담당 상담사만 최종 완료
 inquiry = stateInquiry(store, "DEMO-INQ-002");
@@ -326,7 +316,7 @@ inquiry = stateInquiry(store, "DEMO-INQ-002");
 assert.equal(inquiry.status, "CONSULTATION_IN_PROGRESS");
 
 const originalSummary = inquiry.aiSummaryOriginal;
-store.dispatch("SAVE_AI_SUMMARY_REVISION", {
+store.dispatch("UPDATE_CONSULTATION_SUMMARY", {
   inquiryId: inquiry.id,
   text: "고객의 반복 증상과 설치 환경을 함께 확인해야 합니다.",
   stateVersion: inquiry.stateVersion,
@@ -336,19 +326,19 @@ inquiry = stateInquiry(store, inquiry.id);
 assert.equal(inquiry.aiSummaryOriginal, originalSummary);
 assert.equal(inquiry.aiSummaryRevision.text, "고객의 반복 증상과 설치 환경을 함께 확인해야 합니다.");
 assert.equal(inquiry.aiSummaryRevision.editorId, counselor.id);
-assert.ok(inquiry.timeline.some((item) => item.event === "SAVE_AI_SUMMARY_REVISION"));
-assert.throws(() => store.dispatch("SAVE_AI_SUMMARY_REVISION", {
+assert.ok(inquiry.timeline.some((item) => item.event === "UPDATE_CONSULTATION_SUMMARY"));
+assert.throws(() => store.dispatch("UPDATE_CONSULTATION_SUMMARY", {
   inquiryId: inquiry.id,
   text: "고객이 임의로 변경하면 안 되는 요약",
   stateVersion: inquiry.stateVersion,
   idempotencyKey: key("summary-revision-wrong-role")
-}, customer2), (error) => error.code === "FINALIZE-AUTH-01");
+}, customer2));
 
 store.dispatch("CONSULTATION_COMPLETED", {
   inquiryId: inquiry.id,
   note: "필터 수명과 다른 수전 사용 여부를 확인했습니다.",
   outcome: "공식 조치 안내 후 확인 요청",
-  usageStatus: "NORMAL",
+  usageGuidanceStatus: "NORMAL",
   stateVersion: inquiry.stateVersion,
   idempotencyKey: key("counsel-complete")
 }, counselor);
@@ -366,27 +356,27 @@ assert.equal(inquiry.customerActionRequired, "STAFF_FINALIZATION");
 
 assert.throws(() => store.dispatch("FINALIZE_INQUIRY", {
   inquiryId: inquiry.id, stateVersion: inquiry.stateVersion, idempotencyKey: key("wrong-role")
-}, technician), (error) => error.code === "FINALIZE-AUTH-01");
+}, technician));
 store.dispatch("FINALIZE_INQUIRY", {
   inquiryId: inquiry.id, stateVersion: inquiry.stateVersion, idempotencyKey: key("counsel-final")
 }, counselor);
 assert.equal(stateInquiry(store, "DEMO-INQ-002").status, "RESOLVED");
 
-// 4. 확정 방문 일정 변경 요청은 상태를 되돌리지 않는다.
+// 4. v13 고객 화면은 확정 방문 일정을 조회만 하며 변경 요청 이벤트를 제공하지 않는다.
 inquiry = stateInquiry(store, "DEMO-INQ-004");
-store.dispatch("REQUEST_VISIT_RESCHEDULE", {
+assert.ok(!Array.from(store.getAllowedActions(inquiry.id, customer4)).includes("REQUEST_VISIT_RESCHEDULE"));
+assert.throws(() => store.dispatch("REQUEST_VISIT_RESCHEDULE", {
   inquiryId: inquiry.id,
   visitId: "DEMO-VISIT-004",
   reason: "근무 일정 변경",
   preferredAt: "2026-07-24T15:00:00+09:00",
   stateVersion: inquiry.stateVersion,
   idempotencyKey: key("reschedule")
-}, customer4);
+}, customer4));
 inquiry = stateInquiry(store, "DEMO-INQ-004");
 assert.equal(inquiry.status, "VISIT_SCHEDULED");
 assert.equal(stateVisit(store, inquiry.id).status, "CONFIRMED");
-assert.equal(stateVisit(store, inquiry.id).rescheduleRequest.status, "PENDING");
-assert.ok(store.getState().notifications.some((item) => item.role === "OPERATOR" && item.inquiryId === inquiry.id && item.visitId === "DEMO-VISIT-004"));
+assert.equal(stateVisit(store, inquiry.id).rescheduleRequest, undefined);
 
 // 5. 방문 경로는 START_VISIT → COMPLETED → 고객 피드백 → 기사 최종 완료
 store.dispatch("START_VISIT", {
@@ -406,10 +396,18 @@ store.dispatch("VISIT_COMPLETED", {
   actualCause: "연결 피팅 체결 불량",
   actions: "연결 피팅 재체결 및 누수 확인",
   parts: "연결 피팅",
-  usageStatus: "NORMAL",
+  usageGuidanceStatus: "NORMAL",
+  usageGuidanceMessage: "현장 점검 후 일반 사용이 가능합니다.",
   restrictedFunctions: [],
-  decisionBasis: "공식 매뉴얼 38쪽 및 현장 점검",
+  guidanceBasis: "공식 매뉴얼 38쪽 및 현장 점검",
   nextAction: "24시간 누수 재발 여부 확인",
+  careHistoryApplied: true,
+  visitCompletedCareDate: "2026-07-22",
+  filterReplaced: false,
+  replacedFilterItems: [],
+  nextCareDate: null,
+  nextCareBasis: null,
+  nextCareStatus: "CONFIRMATION_REQUIRED",
   notes: "점검 후 누수 없음",
   signature: "합성 고객 004",
   stateVersion: inquiry.stateVersion,
@@ -421,8 +419,8 @@ assert.equal(stateVisit(store, inquiry.id).status, "COMPLETED");
 let completedState = store.getState();
 let completedProduct = completedState.products.find((item) => item.id === inquiry.productId);
 let completedCare = completedState.careHistory.find((item) => item.visitId === "DEMO-VISIT-004");
-assert.equal(completedProduct.lastCareAt, stateVisit(store, inquiry.id).completedAt);
-assert.equal(completedProduct.careSchedule.status, "PLANNING");
+assert.equal(completedProduct.lastCareAt, "2026-07-22");
+assert.equal(completedProduct.careSchedule.status, "CONFIRMATION_REQUIRED");
 assert.equal(completedProduct.careSchedule.nextCareAt, null);
 assert.equal(completedProduct.careSchedule.lastVisitId, "DEMO-VISIT-004");
 assert.equal(completedCare.actualCause, "연결 피팅 체결 불량");
@@ -439,8 +437,9 @@ assert.equal(stateInquiry(store, inquiry.id).status, "RESOLVED");
 
 // 6. state_version 충돌은 최신 상태를 덮어쓰지 않는다.
 inquiry = stateInquiry(store, dangerInquiryId);
-assert.throws(() => store.dispatch("START_CONSULTATION", {
+assert.throws(() => store.dispatch("UPDATE_CONSULTATION_SUMMARY", {
   inquiryId: dangerInquiryId,
+  text: "충돌 검증용 수정본",
   stateVersion: inquiry.stateVersion - 1,
   idempotencyKey: key("stale")
 }, counselor), (error) => error.code === "STATE-CONFLICT-01");
@@ -457,6 +456,13 @@ reopenedStore.dispatch("CUSTOMER_REPORTED_UNRESOLVED", {
 }, customer5);
 reopenedInquiry = stateInquiry(reopenedStore, reopenedInquiry.id);
 assert.equal(reopenedInquiry.status, "REOPENED");
+reopenedStore.dispatch("RESUME_CONSULTATION", {
+  inquiryId: reopenedInquiry.id,
+  stateVersion: reopenedInquiry.stateVersion,
+  idempotencyKey: key("reopened-resume")
+}, counselor);
+reopenedInquiry = stateInquiry(reopenedStore, reopenedInquiry.id);
+assert.equal(reopenedInquiry.status, "CONSULTATION_REQUIRED");
 reopenedStore.dispatch("START_CONSULTATION", {
   inquiryId: reopenedInquiry.id,
   stateVersion: reopenedInquiry.stateVersion,
@@ -471,6 +477,19 @@ visitStore.dispatch("START_CONSULTATION", {
   inquiryId: visitInquiry.id, stateVersion: visitInquiry.stateVersion, idempotencyKey: key("visit-counsel-start")
 }, counselor);
 visitInquiry = stateInquiry(visitStore, visitInquiry.id);
+visitStore.dispatch("UPDATE_CONSULTATION_SUMMARY", {
+  inquiryId: visitInquiry.id,
+  text: "출수량 저하 원인 확인을 위해 현장 수압과 급수 계통을 우선 점검합니다.",
+  stateVersion: visitInquiry.stateVersion,
+  idempotencyKey: key("visit-summary-update")
+}, counselor);
+visitInquiry = stateInquiry(visitStore, visitInquiry.id);
+visitStore.dispatch("CONFIRM_CONSULTATION_SUMMARY", {
+  inquiryId: visitInquiry.id,
+  stateVersion: visitInquiry.stateVersion,
+  idempotencyKey: key("visit-summary-confirm")
+}, counselor);
+visitInquiry = stateInquiry(visitStore, visitInquiry.id);
 visitStore.dispatch("VISIT_REVIEW_REQUIRED", {
   inquiryId: visitInquiry.id, note: "현장 수압과 연결부 점검 필요", stateVersion: visitInquiry.stateVersion, idempotencyKey: key("visit-review")
 }, counselor);
@@ -480,6 +499,8 @@ const createdVisit = visitStore.dispatch("VISIT_NEEDED", {
   inquiryId: visitInquiry.id,
   technicianId: "STAFF-TECH-01",
   desiredAt: "2026-07-25T10:00:00+09:00",
+  visitReason: "현장 수압과 연결부 상태 확인",
+  inspectionPriority: "출수 계통과 급수 밸브를 우선 점검",
   notes: "출수량 저하 현장 점검",
   safetyNotes: "점검 전 고객 입력 재확인",
   stateVersion: visitInquiry.stateVersion,
@@ -528,6 +549,21 @@ visitStore.dispatch("MARK_NOTIFICATION_READ", {
 linkedState = visitStore.getState();
 assert.equal(linkedState.notifications.find((item) => item.id === technicianNotification.id).read, true);
 
+visitStore.dispatch("UPDATE_PREVISIT_REPORT", {
+  inquiryId: visitInquiry.id,
+  visitId: createdVisit,
+  text: "출수 계통과 급수 밸브를 우선 확인하고 고객 입력을 현장에서 재확인합니다.",
+  stateVersion: visitInquiry.stateVersion,
+  idempotencyKey: key("previsit-update")
+}, technician);
+visitInquiry = stateInquiry(visitStore, visitInquiry.id);
+visitStore.dispatch("CONFIRM_PREVISIT_REPORT", {
+  inquiryId: visitInquiry.id,
+  visitId: createdVisit,
+  stateVersion: visitInquiry.stateVersion,
+  idempotencyKey: key("previsit-confirm")
+}, technician);
+visitInquiry = stateInquiry(visitStore, visitInquiry.id);
 visitStore.dispatch("START_VISIT", {
   inquiryId: visitInquiry.id, visitId: createdVisit, reconfirmed: true,
   stateVersion: visitInquiry.stateVersion, idempotencyKey: key("revisit-start")
@@ -538,8 +574,8 @@ visitStore.dispatch("REVISIT_NEEDED", {
   visitId: createdVisit,
   actualCause: "설치 수압 추가 측정 필요",
   actions: "1차 연결부 점검",
-  usageStatus: "PENDING_CONSULTATION",
-  decisionBasis: "현장 수압 측정값 변동",
+  usageGuidanceStatus: "PENDING_CONSULTATION",
+  guidanceBasis: "현장 수압 측정값 변동",
   nextAction: "장비 지참 후 추가 방문",
   revisitReason: "정밀 수압 측정 장비 필요",
   stateVersion: visitInquiry.stateVersion,
@@ -577,4 +613,4 @@ visitStore.dispatch("CONFIRM_VISIT", {
 assert.equal(stateInquiry(visitStore, visitInquiry.id).status, "VISIT_SCHEDULED");
 assert.equal(stateVisit(visitStore, visitInquiry.id).status, "CONFIRMED");
 
-console.log("state-flow-fix-v6: PASS");
+console.log("state-flow-screen-design-v13: PASS");

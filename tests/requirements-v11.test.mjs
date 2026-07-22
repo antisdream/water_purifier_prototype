@@ -3,20 +3,20 @@ import { bootRuntime, read, runtimeFiles } from "./runtime-helper.mjs";
 
 const runtime = bootRuntime();
 const seed = runtime.WATERCARE_FIX_SEED;
-assert.equal(seed.meta.schemaVersion, "SCREEN-FIX-V6");
-assert.equal(seed.meta.seedRevision, 4);
+assert.equal(seed.meta.schemaVersion, "SCREEN-DESIGN-V13");
+assert.equal(seed.meta.seedRevision, 6);
 assert.equal(seed.model.productCode, "WPUJAC104DWH");
 assert.equal(seed.model.productGeneration, "D");
 assert.equal(seed.model.scopeRole, "mvp_primary");
-assert.equal(seed.scenarios.length, 6);
+assert.equal(seed.scenarios.length, 7);
 assert.deepEqual(Array.from(seed.scenarios, (item) => item.id), [
   "SYN-JAC104-001", "SYN-JAC104-002", "SYN-JAC104-003",
-  "SYN-JAC104-004", "SYN-JAC104-005", "SYN-JAC104-006"
+  "SYN-JAC104-004", "SYN-JAC104-005", "SYN-JAC104-006", "SYN-JAC104-007"
 ]);
-assert.equal(seed.customers.length, 6);
+assert.equal(seed.customers.length, 7);
 assert.ok(seed.customers.every((item) => /^합성 고객 \d{3}$/.test(item.name) && item.id.startsWith("DEMO-CUST-") && item.synthetic));
 assert.ok(seed.products.every((item) => item.productCode === "WPUJAC104DWH" && item.manualModel === "WPU-JAC104D" && item.productGeneration === "D"));
-assert.equal(seed.inquiries.length, 6);
+assert.equal(seed.inquiries.length, 7);
 assert.equal(seed.questionnaireSessions.length, 2);
 assert.ok(seed.questionnaireSessions.every((item) => item.inquiryId === null && item.questionnaireStatus === "UNANSWERED"));
 assert.ok(Array.isArray(seed.careHistory));
@@ -37,7 +37,7 @@ for (const item of seed.evidenceRegistry) {
   assert.equal(item.productGeneration, "D");
   assert.equal(item.scopeRole, "mvp_primary");
   assert.equal(item.applicability, "model_exact");
-  assert.equal(item.allowedUse, null);
+  assert.equal(item.allowedUse, "mvp_primary");
 }
 
 const storeSource = read("assets/js/core/store.js");
@@ -45,7 +45,7 @@ for (const eventName of [
   "START_CARE_PRECHECK", "START_INQUIRY", "REGISTER_PRODUCT", "VALIDATE_PRODUCT", "REQUEST_PRODUCT_SUPPORT", "START_PRODUCT_SUPPORT_CONSULTATION", "COMPLETE_PRODUCT_SUPPORT", "PRODUCT_UPDATED", "SAVE_QUESTIONNAIRE", "SUBMIT_CARE_PRECHECK", "CANCEL_CARE_PRECHECK", "SAVE_DRAFT", "SUBMIT_SYMPTOM",
   "SUBMIT_ANSWERS", "CANCEL_INQUIRY", "CUSTOMER_REPORTED_SELF_RESOLVED", "REQUEST_CONSULTATION",
   "SUBMIT_RESOLUTION_FEEDBACK", "CUSTOMER_REPORTED_UNRESOLVED", "START_CONSULTATION",
-  "RETRY_AI_PROCESS", "SAVE_AI_SUMMARY_REVISION", "CONSULTATION_COMPLETED", "VISIT_REVIEW_REQUIRED", "VISIT_NEEDED", "UPDATE_VISIT_SCHEDULE",
+  "RETRY_AI_PROCESS", "RESUME_CONSULTATION", "UPDATE_CONSULTATION_SUMMARY", "CONFIRM_CONSULTATION_SUMMARY", "UPDATE_PREVISIT_REPORT", "CONFIRM_PREVISIT_REPORT", "CONSULTATION_COMPLETED", "VISIT_REVIEW_REQUIRED", "VISIT_NEEDED", "UPDATE_VISIT_SCHEDULE",
   "CONFIRM_VISIT", "START_VISIT", "VISIT_COMPLETED", "REVISIT_NEEDED", "FINALIZE_INQUIRY"
 ]) assert.ok(storeSource.includes(`case "${eventName}"`), eventName);
 for (const token of ["STATE-CONFLICT-01", "DUPLICATE-EVENT-01", "FINALIZE-AUTH-01", "ALREADY-RESOLVED-01", "idempotencyKey", "stateVersion"])
@@ -98,7 +98,7 @@ for (const id of ["CONS-01", "CONS-02", "CONS-03"]) assert.ok(counselorSource.in
 for (const eventName of ["START_CONSULTATION", "CONSULTATION_COMPLETED", "VISIT_REVIEW_REQUIRED", "VISIT_NEEDED", "UPDATE_VISIT_SCHEDULE", "CONFIRM_VISIT", "FINALIZE_INQUIRY"])
   assert.ok(counselorSource.includes(eventName), eventName);
 for (const status of ["REOPENED", "REVISIT_REQUIRED"]) assert.ok(counselorSource.includes(status), `counselor follow-up: ${status}`);
-for (const token of ["AI 원본", "상담사 수정본", "SAVE_AI_SUMMARY_REVISION", "START_PRODUCT_SUPPORT_CONSULTATION", "COMPLETE_PRODUCT_SUPPORT"])
+for (const token of ["AI 상담 요약 초안", "상담사 수정본", "UPDATE_CONSULTATION_SUMMARY", "CONFIRM_CONSULTATION_SUMMARY", "START_PRODUCT_SUPPORT_CONSULTATION", "COMPLETE_PRODUCT_SUPPORT"])
   assert.ok(counselorSource.includes(token), `counselor summary contract: ${token}`);
 
 const technicianSource = read("assets/js/roles/technician/app.js");
@@ -112,7 +112,9 @@ const operatorSource = read("assets/js/roles/operator/app.js");
 assert.ok(operatorSource.includes("ADMIN-01"));
 assert.ok(operatorSource.includes("조회 전용"));
 assert.ok(operatorSource.includes("data-operator-notification-inquiry"), "operator notification filter linkage");
-assert.ok(!operatorSource.includes("Store.dispatch("), "ADMIN-01 must be read-only");
+assert.ok(operatorSource.includes('Store.dispatch("MARK_NOTIFICATION_READ"'), "operator notification read persistence");
+for (const forbiddenEvent of ["START_CONSULTATION", "VISIT_NEEDED", "CONFIRM_VISIT", "VISIT_COMPLETED", "FINALIZE_INQUIRY"])
+  assert.ok(!operatorSource.includes(`Store.dispatch("${forbiddenEvent}"`), `ADMIN-01 workflow mutation forbidden: ${forbiddenEvent}`);
 
 const customerCss = read("assets/css/customer-mobile.css");
 const technicianCss = read("assets/css/technician-tablet.css");
@@ -122,4 +124,4 @@ assert.match(customerCss, /@media\s*\(max-width/);
 assert.match(technicianCss, /@media\s*\(max-width/);
 assert.match(staffCss, /@media\s*\(max-width/);
 
-console.log("requirements-screen-fix-v6: PASS");
+console.log("requirements-screen-design-v13: PASS");

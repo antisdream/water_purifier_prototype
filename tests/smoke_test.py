@@ -163,8 +163,13 @@ def check_fix_scope() -> None:
     for role, source in [("customer", customer_js), ("counselor", counselor_js), ("technician", technician_js)]:
         assert "MARK_NOTIFICATION_READ" in source, f"{role}: notification read linkage missing"
     assert "ADMIN-01" in operator_js
-    assert "Store.dispatch(" not in operator_js, "operator must remain read-only"
-    assert "SAVE_AI_SUMMARY_REVISION" in counselor_js
+    assert 'Store.dispatch("MARK_NOTIFICATION_READ"' in operator_js, "operator notification read linkage missing"
+    for forbidden_event in ["START_CONSULTATION", "VISIT_NEEDED", "CONFIRM_VISIT", "VISIT_COMPLETED", "FINALIZE_INQUIRY"]:
+        assert f'Store.dispatch("{forbidden_event}"' not in operator_js, f"operator workflow mutation forbidden: {forbidden_event}"
+    assert "UPDATE_CONSULTATION_SUMMARY" in counselor_js
+    assert "CONFIRM_CONSULTATION_SUMMARY" in counselor_js
+    assert "UPDATE_PREVISIT_REPORT" in technician_js
+    assert "CONFIRM_PREVISIT_REPORT" in technician_js
     assert "questionnaireSessionId" in customer_js
     assert "careHistory" in technician_js
 
@@ -173,7 +178,7 @@ def main() -> int:
     check_pages()
     check_assets()
     check_fix_scope()
-    print("static-http-smoke-fix-v6: PASS")
+    print("static-http-smoke-screen-design-v13: PASS")
     return 0
 
 
@@ -181,5 +186,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except AssertionError as error:
-        print(f"static-http-smoke-fix-v6: FAIL: {error}", file=sys.stderr)
+        print(f"static-http-smoke-screen-design-v13: FAIL: {error}", file=sys.stderr)
         raise SystemExit(1)
