@@ -339,15 +339,7 @@
             '</dl>' +
           '</section>' +
           renderSafetySection(inquiry) +
-          '<section class="section-card" aria-labelledby="counsel-title">' +
-            '<div class="section-heading"><div><h2 id="counsel-title">상담 결과·방문 인계</h2><p>상담사가 전달한 판단과 현장 메모입니다.</p></div></div>' +
-            '<dl class="data-list">' +
-              dataRow("상담 결과", counselSummary(inquiry)) +
-              dataRow("방문 메모", visit.notes || "별도 메모 없음") +
-              dataRow("안전 메모", visit.safetyNotes || "별도 안전 메모 없음") +
-              dataRow("현재 사용 안내", usageLabel(inquiry.usageGuidance && inquiry.usageGuidance.usageStatus)) +
-            '</dl>' +
-          '</section>' +
+          renderAiCounselHandoff(inquiry, visit) +
         '</div>' +
         '<div class="detail-column">' +
           '<section class="section-card" aria-labelledby="priority-title">' +
@@ -424,6 +416,65 @@
     return timeline ? timeline.label : "상담 인계 기록 확인 필요";
   }
 
+  function aiRevisionText(inquiry) {
+    var revision = inquiry && inquiry.aiSummaryRevision;
+    if (!revision) return "상담사 수정본 없음 · AI 원본 요약을 유지합니다.";
+    if (typeof revision === "string") return revision;
+    return revision.text || revision.summary || "상담사 수정본 내용 확인 필요";
+  }
+
+  function renderAiCounselHandoff(inquiry, visit) {
+    var process = inquiry.aiProcess || {};
+    var retrieval = process.retrieval || {};
+    var revision = inquiry.aiSummaryRevision;
+    var record = inquiry.counselRecord || {};
+    var guidance = inquiry.usageGuidance || {};
+    var restrictedWater = array(guidance.restrictedWaterTypes).join(", ") || "제한 없음";
+    var restrictedFunctions = array(guidance.restrictedFunctions).join(", ") || "제한 없음";
+    var revisionEditor = revision && typeof revision === "object" ? (revision.editedBy || revision.updatedBy || "상담사") : "-";
+    var revisionAt = revision && typeof revision === "object" ? (revision.editedAt || revision.updatedAt) : null;
+
+    return '<section class="section-card" aria-labelledby="ai-original-title">' +
+        '<div class="section-heading"><div><h2 id="ai-original-title">AI 원본 요약</h2><p>상담사 수정 전 생성된 원문으로, 현장 판단의 참고 정보입니다.</p></div><span class="badge badge--blue">원본 보존</span></div>' +
+        '<blockquote class="quote-box">“' + escapeHTML(inquiry.aiSummaryOriginal || "등록된 AI 원본 요약이 없습니다.") + '”</blockquote>' +
+        '<dl class="data-list">' +
+          dataRow("AI 처리 결과", inquiry.aiOutcome || inquiry.aiState || "확인 필요") +
+          dataRow("처리 모드", process.mode || "확인 필요") +
+          dataRow("근거 검색", retrieval.verified === true ? "검증 근거 " + String(retrieval.resultCount || 0) + "건" : retrieval.verified === false ? "검증 근거 없음" : "검색 기록 확인 필요") +
+        '</dl>' +
+      '</section>' +
+      '<section class="section-card" aria-labelledby="counsel-revision-title">' +
+        '<div class="section-heading"><div><h2 id="counsel-revision-title">상담사 수정 요약</h2><p>AI 원본을 덮어쓰지 않고 별도 이력으로 전달합니다.</p></div>' + (revision ? '<span class="badge badge--success">수정본</span>' : '<span class="badge badge--caution">원본 유지</span>') + '</div>' +
+        '<blockquote class="quote-box">“' + escapeHTML(aiRevisionText(inquiry)) + '”</blockquote>' +
+        '<dl class="data-list">' +
+          dataRow("수정 담당", revisionEditor) +
+          dataRow("수정 시각", revisionAt ? formatDateTime(revisionAt) : "수정 이력 없음") +
+        '</dl>' +
+      '</section>' +
+      '<section class="section-card" aria-labelledby="counsel-handoff-title">' +
+        '<div class="section-heading"><div><h2 id="counsel-handoff-title">상담사 방문 인계</h2><p>상담 판단과 현장 확인 요청을 독립된 인계 정보로 확인합니다.</p></div></div>' +
+        '<dl class="data-list">' +
+          dataRow("상담 결과", record.outcome || counselSummary(inquiry)) +
+          dataRow("상담 기록", record.note || "상담 기록 확인 필요") +
+          dataRow("인계 담당", record.completedBy || record.updatedBy || "담당 상담사 확인 필요") +
+          dataRow("인계 시각", record.completedAt || record.updatedAt ? formatDateTime(record.completedAt || record.updatedAt) : "인계 시각 확인 필요") +
+          dataRow("방문 메모", visit.notes || "별도 메모 없음") +
+          dataRow("안전 메모", visit.safetyNotes || "별도 안전 메모 없음") +
+        '</dl>' +
+      '</section>' +
+      '<section class="section-card" aria-labelledby="usage-guidance-title">' +
+        '<div class="section-heading"><div><h2 id="usage-guidance-title">현재 사용 안내</h2><p>상담 이후에도 현장에서 유지해야 할 출수·기능 제한입니다.</p></div></div>' +
+        '<dl class="data-list">' +
+          dataRow("사용 상태", usageLabel(guidance.usageStatus)) +
+          dataRow("제한 출수", restrictedWater) +
+          dataRow("제한 기능", restrictedFunctions) +
+          dataRow("판단 근거", guidance.decisionBasis || "판단 근거 확인 필요") +
+          dataRow("고객의 다음 행동", guidance.nextAction || "다음 행동 확인 필요") +
+          dataRow("최종 변경", [guidance.updatedBy, guidance.updatedAt ? formatDateTime(guidance.updatedAt) : ""].filter(Boolean).join(" · ") || "변경 이력 없음") +
+        '</dl>' +
+      '</section>';
+  }
+
   function inspectionPriorities(inquiry) {
     if (inquiry.topicCode === "symptom_leak") {
       return ["원수 밸브 잠금과 전원 분리 상태 재확인", "제품 하부·연결 호스의 실제 누수 위치 확인", "누수 범위와 주변 전기부 접촉 여부 확인", "공식 근거와 현장 원인을 구분해 기록"];
@@ -475,6 +526,45 @@
     return status === "OFFICIAL_VERIFIED" || status === "text_and_visual_verified" || /^live_official_page_verified/.test(status);
   }
 
+  function evidenceMetadataText(value) {
+    if (value == null || value === "") return "-";
+    if (Array.isArray(value)) return value.length ? value.join(", ") : "-";
+    if (typeof value === "object") {
+      try { return JSON.stringify(value); } catch (error) { return String(value); }
+    }
+    return String(value);
+  }
+
+  function renderEvidenceMetadata(evidence) {
+    var fields = [
+      ["evidence_id", evidenceValue(evidence, "evidenceId", "evidence_id")],
+      ["chunk_id", evidenceValue(evidence, "chunkId", "chunk_id")],
+      ["document_id", evidenceValue(evidence, "documentId", "document_id")],
+      ["document_title", evidenceValue(evidence, "documentTitle", "document_title")],
+      ["document_version", evidenceValue(evidence, "documentVersion", "document_version")],
+      ["page_refs", evidenceValue(evidence, "pageRefs", "page_refs")],
+      ["topic_code", evidenceValue(evidence, "topicCode", "topic_code")],
+      ["evidence_summary", evidenceValue(evidence, "evidenceSummary", "evidence_summary")],
+      ["applicability", evidence.applicability],
+      ["allowed_use", evidenceValue(evidence, "allowedUse", "allowed_use")],
+      ["verification_status", evidenceValue(evidence, "verificationStatus", "verification_status")],
+      ["source_type", evidenceValue(evidence, "sourceType", "source_type")],
+      ["source_landing_url", evidenceValue(evidence, "sourceLandingUrl", "source_landing_url")],
+      ["source_direct_download_url", evidenceValue(evidence, "sourceDirectDownloadUrl", "source_direct_download_url")],
+      ["product_generation", evidenceValue(evidence, "productGeneration", "product_generation")],
+      ["product_code", evidenceValue(evidence, "productCode", "product_code")],
+      ["model_family", evidenceValue(evidence, "modelFamily", "model_family")],
+      ["manual_model", evidenceValue(evidence, "manualModel", "manual_model")],
+      ["scope_role", evidenceValue(evidence, "scopeRole", "scope_role")],
+      ["risk_level", evidenceValue(evidence, "riskLevel", "risk_level")],
+      ["requires_consultation", evidenceValue(evidence, "requiresConsultation", "requires_consultation")],
+      ["safe_actions", evidenceValue(evidence, "safeActions", "safe_actions")]
+    ];
+    return '<details class="evidence-metadata" open><summary>EvidenceCardDTO 전체 메타데이터</summary><dl class="data-list">' +
+      fields.map(function (field) { return dataRow(field[0], evidenceMetadataText(field[1])); }).join("") +
+      '</dl></details>';
+  }
+
   function renderEvidence(evidence) {
     if (UI && typeof UI.evidenceCard === "function") {
       try {
@@ -482,7 +572,7 @@
         if (typeof shared === "string" && shared.trim()) {
           var sharedId = evidenceValue(evidence, "evidenceId", "evidence_id") || "근거 ID 없음";
           var sharedLanding = evidenceValue(evidence, "sourceLandingUrl", "source_landing_url") || "";
-          return '<div class="evidence-adapter" data-evidence-id="' + escapeHTML(sharedId) + '" data-landing-url="' + escapeHTML(sharedLanding) + '">' + shared + '<div class="source-fallback" data-source-fallback="' + escapeHTML(sharedId) + '" hidden>공식 검색 화면에서 문서를 확인해주세요.</div></div>';
+          return '<div class="evidence-adapter" data-evidence-id="' + escapeHTML(sharedId) + '" data-landing-url="' + escapeHTML(sharedLanding) + '">' + shared + renderEvidenceMetadata(evidence) + '<div class="source-fallback" data-source-fallback="' + escapeHTML(sharedId) + '" hidden>공식 검색 화면에서 문서를 확인해주세요.</div></div>';
         }
       } catch (error) {
         /* The local renderer below preserves the fixed DTO and source-button rules. */
@@ -505,6 +595,7 @@
       '<header><div><span class="evidence-type">OFFICIAL MANUAL</span><h4>' + escapeHTML(title) + '</h4></div><span class="badge badge--success">' + escapeHTML(verifiedEvidence(evidence) ? "공식 검증" : "상태 확인") + '</span></header>' +
       '<p>' + escapeHTML(summary) + '</p>' +
       '<div class="evidence-meta"><span><b>evidence_id</b> ' + escapeHTML(id) + '</span><span><b>문서 버전</b> ' + escapeHTML(version) + '</span><span><b>근거 페이지</b> ' + escapeHTML(pageText) + '</span><span><b>적용 모델</b> ' + escapeHTML(evidenceValue(evidence, "manualModel", "manual_model") || "확인 필요") + '</span></div>' +
+      renderEvidenceMetadata(evidence) +
       (actions ? '<div class="evidence-actions">' + actions + '</div>' : "") +
       '<div class="source-fallback" data-source-fallback="' + escapeHTML(id) + '" hidden>공식 검색 화면에서 문서를 확인해주세요.</div>' +
     '</article>';
@@ -530,7 +621,7 @@
         '<section class="empty-state"><span class="empty-state-icon" aria-hidden="true">◇</span><h2>아직 점검을 시작하지 않았습니다</h2><p>사전 점검 화면에서 현장 재확인 항목을 완료하면 방문 결과를 입력할 수 있습니다.</p><button class="button button--primary" type="button" data-action="go-detail">사전 점검으로 이동</button></section>';
     }
 
-    var body = visit.status === "IN_PROGRESS" ? renderResultForm(context) : renderSavedResult(context);
+    var body = visit.status === "IN_PROGRESS" ? renderResultForm(context) : renderSavedResult(context, snapshot);
     return renderBackButton() +
       renderPageHeader("TECH-03", "VISIT RESULT", "방문 결과", "AI 예상 원인과 구분하여 현장에서 확인한 원인·조치·사용 안내를 기록합니다.") +
       renderContextBanner(context) + body;
@@ -577,7 +668,7 @@
     return '<label class="choice-chip"><input type="checkbox" name="' + escapeHTML(name) + '" value="' + escapeHTML(value) + '"' + (checked ? " checked" : "") + '><span>' + escapeHTML(label) + '</span></label>';
   }
 
-  function renderSavedResult(context) {
+  function renderSavedResult(context, snapshot) {
     var visit = context.visit;
     var inquiry = context.inquiry || {};
     var result = visit.result || {};
@@ -605,9 +696,39 @@
       '</div>' +
       '<div class="detail-column">' +
         renderCompletionCard(context, feedbackComment) +
+        renderCareApplication(snapshot, context) +
         '<section class="section-card"><div class="section-heading"><div><h2>처리 원칙</h2><p>방문 경로 완료 상태를 고객 화면과 공유합니다.</p></div></div><ul class="priority-list"><li>AI 예상 원인과 기사 실제 원인은 별도 기록으로 유지</li><li>고객 피드백 전까지 문의 상태는 최종 완료 대기</li><li>동일 방문·idempotency_key의 중복 저장 차단</li></ul></section>' +
       '</div>' +
     '</div>';
+  }
+
+  function renderCareApplication(snapshot, context) {
+    var visit = context.visit || {};
+    if (visit.status !== "COMPLETED" && !visit.careApplied) return "";
+    var product = context.product || {};
+    var schedule = product.careSchedule || {};
+    var history = array(snapshot && snapshot.careHistory).find(function (item) {
+      return item && (item.visitId === visit.id || (item.inquiryId === (context.inquiry && context.inquiry.id) && item.productId === product.id));
+    });
+    var applied = Boolean(visit.careApplied || history);
+    var nextCareAt = schedule.nextCareAt || schedule.nextDate || schedule.plannedAt || null;
+    var planningLabel = schedule.label || schedule.status || "다음 일정 확인 필요";
+    var appliedAt = visit.careUpdatedAt || (history && history.completedAt) || visit.completedAt;
+
+    return '<section class="section-card" aria-labelledby="care-application-title">' +
+      '<div class="section-heading"><div><h2 id="care-application-title">케어 이력·일정 반영</h2><p>방문 완료 결과가 제품 관리 정보에 적용된 상태입니다.</p></div><span class="badge ' + (applied ? "badge--success" : "badge--caution") + '">' + (applied ? "반영 완료" : "초기 이력 확인") + '</span></div>' +
+      '<dl class="data-list">' +
+        dataRow("케어 이력 ID", history && history.id || "연결된 이력 없음") +
+        dataRow("반영 상태", applied ? "방문 결과가 케어 이력과 제품 정보에 반영됨" : "시연 초기 완료 건 · 기존 제품 이력 표시") +
+        dataRow("반영 시각", appliedAt ? formatDateTime(appliedAt) : "반영 시각 확인 필요") +
+        dataRow("최근 케어일(lastCareAt)", product.lastCareAt ? formatDateTime(product.lastCareAt) : "최근 케어일 없음") +
+        dataRow("최근 필터 교체일", product.lastFilterChangedAt ? formatDateTime(product.lastFilterChangedAt) : "교체 이력 없음") +
+        dataRow("다음 케어 계획", planningLabel + (schedule.status ? " (" + schedule.status + ")" : "")) +
+        dataRow("다음 케어 예정일", nextCareAt ? formatDateTime(nextCareAt) : "미정 · 고객과 별도 협의") +
+        dataRow("일정 산정 근거", schedule.note || "일정 산정 근거 확인 필요") +
+        dataRow("연결 방문 ID", schedule.lastVisitId || visit.id || "확인 필요") +
+      '</dl>' +
+    '</section>';
   }
 
   function renderCompletionCard(context, feedbackComment) {
