@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="WPUJAC104DWH 고객케어 상담·방문 상태와 운영 예외를 조회하는 운영 담당자 화면">
+  <title>워터케어 ONE · 운영 대시보드</title>
+  <link rel="stylesheet" href="assets/css/fix-base.css">
+  <link rel="stylesheet" href="assets/css/staff-desktop-v6.css">
+</head>
+<body class="v6-body v6-body--operator">
+  <a class="v6-skip-link" href="#v6-main">본문 바로가기</a>
+
+  <header class="v6-topbar">
+    <a class="v6-brand" href="index.html" aria-label="워터케어 ONE 역할 선택 홈으로 이동">
+      <span class="v6-brand__mark" aria-hidden="true">W</span>
+      <span><strong>워터케어 ONE</strong><small>운영 모니터링</small></span>
+    </a>
+    <div class="v6-topbar__context" aria-label="현재 업무 컨텍스트">
+      <span class="v6-live-dot"><i></i> 공유 상태 연결</span>
+      <span>ADMIN-01</span>
+      <span class="v6-readonly-badge">조회 전용</span>
+    </div>
+    <div class="v6-topbar__actions">
+      <button id="operator-notification-toggle" class="v6-icon-button" type="button" aria-label="운영 알림 열기" aria-haspopup="dialog" aria-controls="operator-notification-panel" aria-expanded="false">
+        <span aria-hidden="true">●</span><b id="operator-notification-count" hidden>0</b>
+      </button>
+      <div class="v6-user-chip"><span>장</span><div><strong>장민서</strong><small>운영 담당자 · 조회 전용</small></div></div>
+    </div>
+  </header>
+
+  <div class="v6-shell">
+    <aside class="v6-sidebar" aria-label="운영 화면 메뉴">
+      <div class="v6-sidebar__section">
+        <p>OPERATIONS</p>
+        <a class="v6-nav-item is-active" href="#operator-summary" aria-current="page"><span aria-hidden="true">▦</span><span>운영 현황</span></a>
+        <a class="v6-nav-item" href="#operator-flow"><span aria-hidden="true">↗</span><span>전환 집계</span></a>
+        <a class="v6-nav-item" href="#operator-exceptions"><span aria-hidden="true">!</span><span>운영 예외</span><b id="operator-exception-count">0</b></a>
+      </div>
+      <div class="v6-sidebar__legend">
+        <p>ADMIN-01 범위</p>
+        <ul>
+          <li><i class="is-safe"></i>조건별 조회·집계</li>
+          <li><i class="is-warning"></i>지연·실패 예외 확인</li>
+          <li><i class="is-neutral"></i>상태 변경 권한 없음</li>
+        </ul>
+      </div>
+      <a class="v6-home-link" href="index.html"><span aria-hidden="true">←</span> 역할 선택 홈</a>
+    </aside>
+
+    <main id="v6-main" class="v6-main" tabindex="-1">
+      <div id="operator-app" aria-live="polite" aria-busy="true">
+        <div class="v6-loading"><span></span><strong>운영 집계 데이터를 불러오는 중입니다.</strong></div>
+      </div>
+    </main>
+  </div>
+
+  <section id="operator-notification-panel" class="v6-notification-panel" role="dialog" aria-modal="false" aria-labelledby="operator-notification-title" hidden>
+    <header><div><small>OPERATION NOTIFICATIONS</small><h2 id="operator-notification-title">운영 알림</h2></div><button type="button" data-close-notifications aria-label="알림 닫기">×</button></header>
+    <div id="operator-notification-list" class="v6-notification-list"></div>
+    <footer>운영 화면은 알림과 현황을 조회만 합니다.</footer>
+  </section>
+
+  <div id="v6-toast" class="v6-toast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <noscript><div class="v6-noscript">이 업무 화면을 사용하려면 JavaScript를 활성화해 주세요.</div></noscript>
+
+  <script src="assets/js/fix-data.js"></script>
+  <script src="assets/js/fix-store.js"></script>
+  <script src="assets/js/fix-common.js"></script>
+  <script src="assets/js/operator-app-v6.js"></script>
+</body>
+</html>
