@@ -14,7 +14,7 @@
   if (!root) return;
   if (!Store || typeof Store.getState !== "function" || typeof Store.dispatch !== "function") {
     root.setAttribute("aria-busy", "false");
-    root.innerHTML = '<div class="v6-error"><strong>공유 업무 모듈을 불러오지 못했습니다.</strong><p>fix-data.js, fix-store.js, fix-common.js의 로드 순서를 확인해 주세요.</p></div>';
+    root.innerHTML = '<div class="v6-error"><strong>공유 업무 모듈을 불러오지 못했습니다.</strong><p>config → domain → data → repository → store → UI 순서를 확인해 주세요.</p></div>';
     return;
   }
 
@@ -50,6 +50,20 @@
 
   function usageLabel(code) {
     return ({ NORMAL: "일반 사용 가능", PARTIAL_STOP: "일부 출수·기능 사용 중지", TOTAL_STOP: "제품 전체 사용 중지", PENDING_CONSULTATION: "판단 보류·상담 필요" })[code] || code || "확인 필요";
+  }
+
+  function aiOutcomeLabel(code) {
+    return ({
+      SAFE_GUIDANCE_READY: "안전 안내 준비 완료",
+      DANGER_DETECTED: "위험 규칙 감지",
+      NO_EVIDENCE: "공식 근거 없음"
+    })[code] || code || "종료 사유 확인 중";
+  }
+
+  function aiOutcomeTone(code) {
+    if (code === "DANGER_DETECTED") return "danger";
+    if (code === "NO_EVIDENCE") return "warning";
+    return code === "SAFE_GUIDANCE_READY" ? "success" : "outline";
   }
 
   function chip(label, tone) {
@@ -119,6 +133,24 @@
     });
   }
 
+  function productSupportRequests() {
+    return (state.productSupportRequests || []).slice().sort(function (a, b) {
+      var active = Number(["CONSULTATION_REQUIRED", "IN_PROGRESS"].indexOf(b.status) >= 0) - Number(["CONSULTATION_REQUIRED", "IN_PROGRESS"].indexOf(a.status) >= 0);
+      return active || new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0);
+    });
+  }
+
+  function productSupportPanel(requests) {
+    if (!requests.length) return "";
+    var statusNames = { CONSULTATION_REQUIRED: "상담 접수 대기", IN_PROGRESS: "상담 진행 중", COMPLETED: "상담 완료" };
+    return '<section class="v6-panel" id="counselor-product-support" style="margin-bottom:16px"><div class="v6-panel-head"><div><h2>제품 지원 범위 상담</h2><p>AI·RAG를 차단한 미지원·후속 확장·보관 제품 요청을 별도 처리합니다.</p></div>' + chip(requests.filter(function (item) { return item.status !== "COMPLETED"; }).length + "건 진행", "warning") + '</div><div class="v6-queue-list">' + requests.map(function (request) {
+      var customer = (state.customers || []).find(function (item) { return item.id === request.customerId; }) || { name: request.customerId };
+      var product = (state.products || []).find(function (item) { return item.id === request.productId; }) || { productCode: request.productId, manualModel: "" };
+      var action = request.status === "CONSULTATION_REQUIRED" ? '<button class="v6-button v6-button--primary" type="button" data-support-dispatch="START_PRODUCT_SUPPORT_CONSULTATION" data-support-id="' + escape(request.id) + '">제품 상담 시작</button>' : request.status === "IN_PROGRESS" && request.assignedCounselorId === ACTOR.id ? '<form class="v6-support-result-form" data-support-id="' + escape(request.id) + '"><label class="v6-form-field">상담 기록<textarea name="note" required placeholder="지원 범위 확인 내용을 기록하세요.">' + escape(request.counselNote || "") + '</textarea></label><label class="v6-form-field">고객 안내 결과<textarea name="result" required placeholder="고객에게 전달할 결과를 기록하세요.">' + escape(request.result || "") + '</textarea></label><button class="v6-button v6-button--primary" type="submit">제품 상담 완료</button></form>' : "";
+      return '<article class="v6-readonly-card" id="support-' + escape(request.id) + '"><div class="v6-chip-row">' + chip(statusNames[request.status] || request.status, request.status === "COMPLETED" ? "success" : "warning") + chip(request.validationStatus || "확인 필요", "outline") + '</div><strong>' + escape(customer.name + " · " + product.productCode) + '</strong><p>' + escape(request.result || request.reason || "지원 범위 확인 필요") + '</p><small>' + escape(request.id + " · " + (product.manualModel || "설명서 모델 확인 필요") + " · " + formatDateTime(request.updatedAt || request.createdAt)) + '</small>' + action + '</article>';
+    }).join("") + '</div></section>';
+  }
+
   function syntheticChip(inquiry) {
     return inquiry.scenarioId ? chip("합성 시연", "info") : "";
   }
@@ -154,10 +186,15 @@
     var verified = item.verificationStatus === "OFFICIAL_VERIFIED" || item.verificationStatus === "text_and_visual_verified";
     var landing = item.sourceLandingUrl;
     var direct = verified ? item.sourceDirectDownloadUrl : null;
+    var policyMeta = [
+      item.scopeRole ? "scope_role · " + item.scopeRole : "",
+      item.applicability ? "applicability · " + item.applicability : "",
+      item.allowedUse ? "allowed_use · " + item.allowedUse : ""
+    ].filter(Boolean);
     return '<article class="v6-evidence-card">' +
       '<span class="v6-evidence-card__icon">공식<br>매뉴얼</span>' +
-      '<div><h4>' + escape(item.documentTitle || "공식 근거") + '</h4><p>' + escape(item.evidenceSummary || "구조화 근거 요약이 없습니다.") + '</p>' +
-      '<div class="v6-evidence-meta"><span>' + escape(item.evidenceId) + '</span><span>' + escape(item.chunkId) + '</span><span>' + escape(item.documentVersion || "버전 미확인") + '</span><span>' + escape((item.pageRefs || []).map(function (page) { return page + "쪽"; }).join(" · ") || "페이지 정보 없음") + '</span><span>' + escape(item.productCode || "제품 코드 미확인") + '</span><span>' + escape(item.verificationStatus || "검증 대기") + '</span></div></div>' +
+      '<div><div class="v6-chip-row">' + chip(verified ? "텍스트·시각 검증 완료" : "검증 대기", verified ? "success" : "warning") + (item.scopeRole ? chip(item.scopeRole, item.scopeRole === "mvp_primary" ? "info" : "warning") : "") + '</div><h4>' + escape(item.documentTitle || "공식 근거") + '</h4><p>' + escape(item.evidenceSummary || "구조화 근거 요약이 없습니다.") + '</p>' +
+      '<div class="v6-evidence-meta"><span>evidence_id · ' + escape(item.evidenceId) + '</span><span>chunk_id · ' + escape(item.chunkId) + '</span><span>버전 · ' + escape(item.documentVersion || "미확인") + '</span><span>페이지 · ' + escape((item.pageRefs || []).map(function (page) { return page + "쪽"; }).join(" · ") || "정보 없음") + '</span><span>상품 코드 · ' + escape(item.productCode || "미확인") + '</span><span>검증 상태 · ' + escape(item.verificationStatus || "검증 대기") + '</span>' + policyMeta.map(function (value) { return '<span>' + escape(value) + '</span>'; }).join("") + '</div></div>' +
       '<div class="v6-evidence-actions">' + (landing ? '<a href="' + escape(landing) + '" target="_blank" rel="noopener noreferrer">공식 출처 보기 ↗</a>' : '<span class="v6-evidence-hold">공식 검색 화면에서 문서를 확인해주세요.</span>') + (direct ? '<a href="' + escape(direct) + '" target="_blank" rel="noopener noreferrer">설명서 PDF 열기 ↗</a>' : "") + '</div>' +
     '</article>';
   }
@@ -172,8 +209,28 @@
     var guidance = inquiry.usageGuidance || {};
     var status = guidance.usageStatus || "PENDING_CONSULTATION";
     var isDanger = status === "TOTAL_STOP" || status === "PARTIAL_STOP";
-    return '<section class="v6-section"><div class="v6-section__head"><h3>현재 사용 안내 상태</h3><span>' + escape(guidance.updatedBy || "업데이트 주체 미확인") + '</span></div>' +
+    return '<section class="v6-section"><div class="v6-section__head"><h3>현재 사용 안내 상태</h3><div class="v6-chip-row">' + chip(usageLabel(status), isDanger ? "danger" : status === "PENDING_CONSULTATION" ? "warning" : "success") + chip(guidance.updatedBy || "업데이트 주체 미확인", "outline") + '</div></div>' +
       '<div class="v6-usage-card' + (isDanger ? " is-danger" : "") + '"><span>' + (isDanger ? "!" : "✓") + '</span><div><strong>' + escape(usageLabel(status)) + '</strong><p>' + escape(guidance.nextAction || "상담 결과를 확인해 주세요.") + '</p><dl><div><dt>제한 출수</dt><dd>' + escape((guidance.restrictedWaterTypes || []).join(" · ") || "없음") + '</dd></div><div><dt>제한 기능</dt><dd>' + escape((guidance.restrictedFunctions || []).join(" · ") || "없음") + '</dd></div><div><dt>판단 근거</dt><dd>' + escape(guidance.decisionBasis || "확인 필요") + '</dd></div><div><dt>갱신 시각</dt><dd>' + escape(formatDateTime(guidance.updatedAt)) + '</dd></div></dl></div></div></section>';
+  }
+
+  function originalSummary(inquiry) {
+    return inquiry.aiSummaryOriginal || inquiry.aiSummary || ((inquiry.conditions || "고객 입력 조건") + "을 확인했으며 공식 근거와 안전 상태를 함께 검토해야 합니다.");
+  }
+
+  function summaryRevision(inquiry) {
+    if (!inquiry.aiSummaryRevision) return null;
+    if (typeof inquiry.aiSummaryRevision === "string") return { text: inquiry.aiSummaryRevision };
+    return inquiry.aiSummaryRevision;
+  }
+
+  function aiSummarySection(inquiry) {
+    var revision = summaryRevision(inquiry);
+    var canEdit = inquiry.status === "CONSULTATION_IN_PROGRESS" && inquiry.assignedCounselorId === ACTOR.id;
+    return '<section class="v6-section"><div class="v6-section__head"><h3>AI 상담 요약·상담사 수정본</h3><div class="v6-chip-row">' + chip(inquiry.aiState || "IDLE", "info") + chip(aiOutcomeLabel(inquiry.aiOutcome), aiOutcomeTone(inquiry.aiOutcome)) + '</div></div>' +
+      '<div class="v6-ai-summary"><span>AI</span><div><strong>AI 원본 · 수정 불가</strong><p>' + escape(originalSummary(inquiry)) + '</p></div></div>' +
+      (revision ? '<div class="v6-ai-summary"><span>상담</span><div><strong>상담사 수정본</strong><p>' + escape(revision.text) + '</p><small>' + escape((revision.editedBy || "상담사") + " · " + formatDateTime(revision.editedAt)) + '</small></div></div>' : '<div class="v6-evidence-hold"><strong>상담사 수정본 없음</strong><p>AI 원본을 확인한 뒤 필요한 보완 내용만 별도 수정본으로 저장합니다.</p></div>') +
+      (canEdit ? '<form id="ai-summary-revision-form" data-inquiry-id="' + escape(inquiry.id) + '"><label class="v6-form-field">상담사 수정 요약<textarea name="summaryRevision" required maxlength="1000" placeholder="AI 원본을 덮어쓰지 않고 상담사가 확인한 보완 내용을 입력하세요.">' + escape(revision && revision.text || "") + '</textarea></label><div class="v6-action-buttons"><button class="v6-button v6-button--secondary v6-button--full" type="submit">상담사 수정본 저장</button></div><p class="v6-action-note">AI 원본과 공식 근거는 유지되며 수정본의 작성자·시각이 별도로 기록됩니다.</p></form>' : '<p class="v6-action-note">상담을 시작한 담당 상담사만 수정본을 저장할 수 있습니다.</p>') +
+    '</section>';
   }
 
   function timelineSection(inquiry) {
@@ -191,7 +248,7 @@
       '<section class="v6-section"><div class="v6-section__head"><h3>고객 최초 입력</h3><span>원문 보존</span></div><blockquote class="v6-original">“' + escape(inquiry.description || "입력 원문 없음") + '”</blockquote></section>' +
       '<section class="v6-section"><div class="v6-section__head"><h3>고객·제품 식별 정보</h3><span>합성 시연 데이터</span></div><dl class="v6-summary-grid"><div><dt>고객·구독</dt><dd>' + escape(customer.id + " · " + (customer.subscriptionId || product.subscriptionId || "-")) + '</dd></div><div><dt>제품·매뉴얼</dt><dd>' + escape(product.productCode + " · " + product.manualModel) + '</dd></div><div><dt>문의·시나리오</dt><dd>' + escape(inquiry.id + " · " + (inquiry.scenarioId || "-")) + '</dd></div><div><dt>담당 상담원</dt><dd>' + escape(counselor ? counselor.name : "미배정") + '</dd></div></dl></section>' +
       '<section class="v6-section"><div class="v6-section__head"><h3>구조화된 고객 답변</h3><span>반복 질문 방지</span></div>' + answerRows(inquiry) + '</section>' +
-      '<section class="v6-section"><div class="v6-section__head"><h3>AI 상담 요약</h3><span>' + escape(inquiry.aiState || "IDLE") + '</span></div><div class="v6-ai-summary"><span>AI</span><div><strong>확정 진단이 아닌 상담 보조 요약</strong><p>' + escape(inquiry.aiSummary || ((inquiry.conditions || "고객 입력 조건") + "을 확인했으며 공식 근거와 안전 상태를 함께 검토해야 합니다.")) + '</p></div></div></section>' +
+      aiSummarySection(inquiry) +
       usageSection(inquiry) + evidenceSection(inquiry);
   }
 
@@ -217,7 +274,14 @@
       return head + '<div class="v6-readonly-card"><strong>상담을 시작할 수 있습니다.</strong>고객 원문, 구조화 답변, 위험 상태와 공식 근거를 먼저 확인하세요.</div><div class="v6-action-buttons"><button class="v6-button v6-button--primary v6-button--full" type="button" data-dispatch="START_CONSULTATION">상담 시작</button></div>';
     }
     if (inquiry.status === "CONSULTATION_IN_PROGRESS") {
-      return head + '<form id="counsel-result-form" data-inquiry-id="' + escape(inquiry.id) + '"><label class="v6-form-field">상담 기록<textarea name="note" required placeholder="고객에게 추가로 확인한 내용과 안내를 기록하세요.">' + escape(inquiry.counselRecord && inquiry.counselRecord.note || "") + '</textarea></label><label class="v6-form-field">상담 결과<textarea name="outcome" placeholder="상담 완료 시 처리 결과를 입력하세요.">' + escape(inquiry.counselRecord && inquiry.counselRecord.outcome || "") + '</textarea></label><label class="v6-form-field">처리 후 사용 안내<select name="usageStatus" required><option value="PENDING_CONSULTATION">판단 보류·상담 필요</option><option value="NORMAL">일반 사용 가능</option><option value="PARTIAL_STOP">일부 출수·기능 사용 중지</option><option value="TOTAL_STOP"' + (inquiry.riskLevel === "DANGER" ? " selected" : "") + '>제품 전체 사용 중지</option></select></label><div class="v6-action-buttons"><button class="v6-button v6-button--secondary v6-button--full" type="submit" value="VISIT_REVIEW_REQUIRED">방문 필요 검토</button><button class="v6-button v6-button--primary v6-button--full" type="submit" value="CONSULTATION_COMPLETED">방문 불필요 · 상담 완료</button></div><p class="v6-action-note">방문 검토는 상담 기록만 필수이며, 상담 완료 시에는 상담 결과까지 저장하고 고객 해결 피드백을 기다립니다.</p></form>';
+      var currentUsage = inquiry.usageGuidance && inquiry.usageGuidance.usageStatus || "PENDING_CONSULTATION";
+      var usageOptions = [
+        ["PENDING_CONSULTATION", "판단 보류·상담 필요"],
+        ["NORMAL", "일반 사용 가능"],
+        ["PARTIAL_STOP", "일부 출수·기능 사용 중지"],
+        ["TOTAL_STOP", "제품 전체 사용 중지"]
+      ].map(function (option) { return '<option value="' + option[0] + '"' + (currentUsage === option[0] ? " selected" : "") + '>' + option[1] + '</option>'; }).join("");
+      return head + '<form id="counsel-result-form" data-inquiry-id="' + escape(inquiry.id) + '"><label class="v6-form-field">상담 기록<textarea name="note" required placeholder="고객에게 추가로 확인한 내용과 안내를 기록하세요.">' + escape(inquiry.counselRecord && inquiry.counselRecord.note || "") + '</textarea></label><label class="v6-form-field">상담 결과<textarea name="outcome" placeholder="상담 완료 시 처리 결과를 입력하세요.">' + escape(inquiry.counselRecord && inquiry.counselRecord.outcome || "") + '</textarea></label><label class="v6-form-field">처리 후 사용 안내<select name="usageStatus" required>' + usageOptions + '</select><small>현재 저장값 · ' + escape(usageLabel(currentUsage)) + '</small></label><div class="v6-action-buttons"><button class="v6-button v6-button--secondary v6-button--full" type="submit" value="VISIT_REVIEW_REQUIRED">방문 필요 검토</button><button class="v6-button v6-button--primary v6-button--full" type="submit" value="CONSULTATION_COMPLETED">방문 불필요 · 상담 완료</button></div><p class="v6-action-note">방문 검토는 상담 기록만 필수이며, 상담 완료 시에는 상담 결과까지 저장하고 고객 해결 피드백을 기다립니다.</p></form>';
     }
     if (inquiry.status === "VISIT_REVIEW_PENDING" || inquiry.status === "VISIT_SCHEDULING" || inquiry.status === "REVISIT_REQUIRED") return head + visitTransitionForm(inquiry);
     if (inquiry.status === "COMPLETION_PENDING") {
@@ -253,15 +317,17 @@
   function render() {
     state = Store.getState();
     var inquiries = queueInquiries();
+    var supportRequests = productSupportRequests();
     if (!selectedInquiryId || !(state.inquiries || []).some(function (item) { return item.id === selectedInquiryId; })) selectedInquiryId = inquiries[0] && inquiries[0].id || null;
     var selected = (state.inquiries || []).find(function (item) { return item.id === selectedInquiryId; }) || null;
     var consultationCount = (state.inquiries || []).filter(function (item) { return ["CONSULTATION_REQUIRED", "REOPENED"].indexOf(item.status) >= 0; }).length;
     var dangerCount = (state.inquiries || []).filter(function (item) { return item.riskLevel === "DANGER" && item.status !== "RESOLVED"; }).length;
     var finalCount = (state.inquiries || []).filter(function (item) { return item.status === "COMPLETION_PENDING" && item.resolutionFeedback && item.resolutionFeedback.resolved; }).length;
-    document.getElementById("counselor-queue-count").textContent = String(consultationCount + dangerCount + finalCount);
+    document.getElementById("counselor-queue-count").textContent = String(consultationCount + dangerCount + finalCount + supportRequests.filter(function (item) { return item.status !== "COMPLETED"; }).length);
     root.setAttribute("aria-busy", "false");
     root.innerHTML = '<header class="v6-page-head"><div class="v6-page-head__copy"><small>CONS-01 · CONS-02 · CONS-03</small><h1>상담·문의 큐</h1><p>위험·상담 필수·최종 완료 대기 순으로 확인하고, 고객 원문과 공식 근거를 보존한 채 방문기사에게 인계합니다.</p></div><div class="v6-page-head__meta"><span>고정 상담원 · 한유진</span><span>공식 모델 · WPUJAC104DWH</span><span>합성 문의 · ' + (state.inquiries || []).length + '건</span></div></header>' +
       '<section class="v6-metric-grid" aria-label="상담 업무 요약"><article class="v6-metric-card is-warning"><div><span>상담 대기</span><i>◷</i></div><strong>' + consultationCount + '</strong><small>신규·재개 상담 시작 필요</small></article><article class="v6-metric-card is-danger"><div><span>위험 문의</span><i>!</i></div><strong>' + dangerCount + '</strong><small>사용·음용 중지 우선</small></article><article class="v6-metric-card"><div><span>방문 진행</span><i>□</i></div><strong>' + (state.inquiries || []).filter(function (item) { return ["VISIT_REVIEW_PENDING", "VISIT_SCHEDULING", "VISIT_SCHEDULED", "REVISIT_REQUIRED"].indexOf(item.status) >= 0; }).length + '</strong><small>검토·조율·확정·재방문</small></article><article class="v6-metric-card is-safe"><div><span>최종 완료 가능</span><i>✓</i></div><strong>' + finalCount + '</strong><small>고객 해결 피드백 도착</small></article></section>' +
+      productSupportPanel(supportRequests) +
       '<section class="v6-panel v6-filter-panel" aria-label="상담 큐 검색과 필터"><label class="v6-filter">문의 검색<input id="counselor-query" type="search" value="' + escape(filters.query) + '" placeholder="문의·시나리오·고객·모델 검색"></label><label class="v6-filter">상태<select id="counselor-status"><option value="ALL">전체 상태</option>' + Array.from(new Set((state.inquiries || []).map(function (item) { return item.status; }))).map(function (code) { return '<option value="' + escape(code) + '"' + (filters.status === code ? " selected" : "") + '>' + escape(statusLabel(code)) + '</option>'; }).join("") + '</select></label><label class="v6-filter">위험도<select id="counselor-risk"><option value="ALL">전체 위험도</option><option value="DANGER"' + (filters.risk === "DANGER" ? " selected" : "") + '>위험</option><option value="CAUTION"' + (filters.risk === "CAUTION" ? " selected" : "") + '>주의</option><option value="GENERAL"' + (filters.risk === "GENERAL" ? " selected" : "") + '>일반</option></select></label><label class="v6-filter">업무 우선 조건<select id="counselor-consultation"><option value="ALL">전체</option><option value="REQUIRED"' + (filters.consultation === "REQUIRED" ? " selected" : "") + '>상담 필수</option><option value="FINAL"' + (filters.consultation === "FINAL" ? " selected" : "") + '>최종 완료 대기</option></select></label><span class="v6-filter-summary"><b>' + inquiries.length + '</b>건</span></section>' +
       '<section class="v6-panel v6-queue-layout"><aside class="v6-queue-column" aria-label="상담 문의 목록"><div class="v6-queue-column__head"><strong>우선순위 큐</strong><span>위험·상담·피드백 기준</span></div><div class="v6-queue-list">' + (inquiries.length ? inquiries.map(queueItem).join("") : '<div class="v6-empty"><span>⌕</span><strong>조건에 맞는 문의가 없습니다.</strong><p>검색어나 필터를 변경해 주세요.</p></div>') + '</div></aside><section class="v6-detail" id="counselor-detail">' + renderDetail(selected) + '</section></section>';
     renderNotifications();
@@ -309,6 +375,18 @@
     }
   }
 
+  function dispatchProductSupport(eventName, requestId, extra) {
+    try {
+      var payload = Object.assign({ productSupportRequestId: requestId, idempotencyKey: idempotencyKey(eventName, requestId) }, extra || {});
+      Store.dispatch(eventName, payload, ACTOR);
+      state = Store.getState();
+      render();
+      showToast("제품 상담 상태를 반영했습니다.", "success");
+    } catch (error) {
+      showToast(error.message || "제품 상담 상태를 변경하지 못했습니다.", "danger");
+    }
+  }
+
   function currentInquiry() {
     return (state.inquiries || []).find(function (item) { return item.id === selectedInquiryId; }) || null;
   }
@@ -323,6 +401,14 @@
     if (eventName === "CONSULTATION_COMPLETED" && !outcome) { showToast("상담 완료 결과를 입력해 주세요.", "danger"); return; }
     if (eventName === "CONSULTATION_COMPLETED") dispatch(eventName, inquiry, { note: note, outcome: outcome, usageStatus: data.get("usageStatus") });
     else dispatch(eventName, inquiry, { note: note });
+  }
+
+  function submitAISummaryRevision(form) {
+    var inquiry = currentInquiry();
+    if (!inquiry) return;
+    var text = String(new FormData(form).get("summaryRevision") || "").trim();
+    if (!text) { showToast("상담사 수정 요약을 입력해 주세요.", "danger"); return; }
+    dispatch("SAVE_AI_SUMMARY_REVISION", inquiry, { text: text });
   }
 
   function submitVisitTransition(form, eventName) {
@@ -357,7 +443,7 @@
     var list = document.getElementById("counselor-notification-list");
     if (!list) return;
     list.innerHTML = items.length ? items.map(function (item) {
-      return '<button class="v6-notification-item' + (!item.read ? " is-unread" : "") + '" type="button" data-notification-id="' + escape(item.id || "") + '" data-notification-inquiry="' + escape(item.inquiryId || "") + '"><span>i</span><div><strong>' + escape(item.title) + '</strong><p>' + escape(item.message) + '</p><small>' + escape(formatDateTime(item.createdAt)) + '</small></div></button>';
+      return '<button class="v6-notification-item' + (!item.read ? " is-unread" : "") + '" type="button" data-notification-id="' + escape(item.id || "") + '" data-notification-inquiry="' + escape(item.inquiryId || "") + '" data-notification-support="' + escape(item.productSupportRequestId || "") + '"><span>i</span><div><strong>' + escape(item.title) + '</strong><p>' + escape(item.message) + '</p><small>' + escape(formatDateTime(item.createdAt)) + '</small></div></button>';
     }).join("") : '<div class="v6-notification-empty">새 상담 알림이 없습니다.</div>';
   }
 
@@ -376,6 +462,8 @@
   }
 
   root.addEventListener("click", function (event) {
+    var supportAction = event.target.closest("[data-support-dispatch]");
+    if (supportAction) { dispatchProductSupport(supportAction.dataset.supportDispatch, supportAction.dataset.supportId); return; }
     var select = event.target.closest("[data-select-inquiry]");
     if (select) { selectedInquiryId = select.dataset.selectInquiry; detailTab = "summary"; render(); return; }
     var tab = event.target.closest("[data-detail-tab]");
@@ -387,6 +475,12 @@
   root.addEventListener("submit", function (event) {
     event.preventDefault();
     var eventName = event.submitter && event.submitter.value;
+    if (event.target.classList.contains("v6-support-result-form")) {
+      var supportData = new FormData(event.target);
+      dispatchProductSupport("COMPLETE_PRODUCT_SUPPORT", event.target.dataset.supportId, { note: String(supportData.get("note") || "").trim(), result: String(supportData.get("result") || "").trim() });
+      return;
+    }
+    if (event.target.id === "ai-summary-revision-form") submitAISummaryRevision(event.target);
     if (event.target.id === "counsel-result-form") submitCounselResult(event.target, eventName);
     if (event.target.id === "visit-transition-form") submitVisitTransition(event.target, eventName);
   });
@@ -418,8 +512,8 @@
   document.getElementById("counselor-notification-toggle").addEventListener("click", function () { setNotificationPanel(!notificationOpen); });
   document.getElementById("counselor-notification-panel").addEventListener("click", function (event) {
     if (event.target.closest("[data-close-notifications]")) { setNotificationPanel(false); return; }
-    var item = event.target.closest("[data-notification-inquiry]");
-    if (item && item.dataset.notificationInquiry) {
+    var item = event.target.closest("[data-notification-id]");
+    if (item) {
       if (item.dataset.notificationId) {
         try {
           Store.dispatch("MARK_NOTIFICATION_READ", {
@@ -431,11 +525,17 @@
           showToast(error.message || "알림을 읽음 처리하지 못했습니다.", "danger");
         }
       }
-      selectedInquiryId = item.dataset.notificationInquiry;
-      detailTab = "summary";
       setNotificationPanel(false);
       render();
-      document.getElementById("counselor-detail").scrollIntoView({ block: "start" });
+      if (item.dataset.notificationInquiry) {
+        selectedInquiryId = item.dataset.notificationInquiry;
+        detailTab = "summary";
+        render();
+        document.getElementById("counselor-detail").scrollIntoView({ block: "start" });
+      } else if (item.dataset.notificationSupport) {
+        var supportTarget = document.getElementById("support-" + item.dataset.notificationSupport);
+        if (supportTarget) supportTarget.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
     }
   });
   document.addEventListener("keydown", function (event) { if (event.key === "Escape" && notificationOpen) { event.preventDefault(); setNotificationPanel(false); } });
