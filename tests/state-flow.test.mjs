@@ -1,29 +1,7 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import vm from "node:vm";
-import { fileURLToPath } from "node:url";
+import { bootRuntime } from "./runtime-helper.mjs";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-function boot() {
-  const values = new Map();
-  const window = {
-    localStorage: {
-      getItem(key) { return values.has(key) ? values.get(key) : null; },
-      setItem(key, value) { values.set(key, String(value)); },
-      removeItem(key) { values.delete(key); }
-    },
-    addEventListener() {},
-    setTimeout,
-    clearTimeout
-  };
-  const context = vm.createContext({ window, console, Date, Intl, Math, JSON, Error, setTimeout, clearTimeout });
-  for (const file of ["assets/js/fix-data.js", "assets/js/fix-store.js"]) {
-    vm.runInContext(fs.readFileSync(path.join(root, file), "utf8"), context, { filename: file });
-  }
-  return window.WaterCareStore;
-}
+function boot() { return bootRuntime().WaterCareStore; }
 
 function stateInquiry(store, id) {
   return store.getState().inquiries.find((item) => item.id === id);
@@ -42,8 +20,165 @@ const customer1 = { role: "CUSTOMER", id: "DEMO-CUST-001", name: "합성 고객 
 const customer2 = { role: "CUSTOMER", id: "DEMO-CUST-002", name: "합성 고객 002" };
 const customer4 = { role: "CUSTOMER", id: "DEMO-CUST-004", name: "합성 고객 004" };
 const customer5 = { role: "CUSTOMER", id: "DEMO-CUST-005", name: "합성 고객 005" };
+const customer6 = { role: "CUSTOMER", id: "DEMO-CUST-006", name: "합성 고객 006" };
 const counselor = { role: "COUNSELOR", id: "STAFF-CONS-01", name: "한유진" };
 const technician = { role: "TECHNICIAN", id: "STAFF-TECH-01", name: "오세훈" };
+
+// 0. 케어 사전 문진은 문의 없이 저장되고, 고객이 선택할 때만 새 문의와 연결된다.
+const precheckStore = boot();
+const inquiryCountBeforePrecheck = precheckStore.getState().inquiries.length;
+let precheckResult = precheckStore.dispatch("START_CARE_PRECHECK", {
+  productId: "DEMO-PROD-001", idempotencyKey: key("precheck-start")
+}, customer1);
+let questionnaire = precheckStore.getState().questionnaireSessions.find((item) => item.id === precheckResult.result);
+assert.equal(precheckStore.getState().inquiries.length, inquiryCountBeforePrecheck);
+assert.equal(questionnaire.inquiryId, null);
+assert.equal(questionnaire.entryMode, "CARE_PRECHECK");
+assert.equal(questionnaire.questionnaireStatus, "IN_PROGRESS");
+precheckStore.dispatch("SUBMIT_CARE_PRECHECK", {
+  questionnaireSessionId: questionnaire.id,
+  symptomCodes: ["LOW_FLOW"],
+  description: "최근 저녁마다 출수량이 줄어듭니다.",
+  conditions: "다른 수전은 사용하지 않았습니다.",
+  answers: { flow: "LOW", leak: "NO" },
+  stateVersion: questionnaire.stateVersion,
+  idempotencyKey: key("precheck-submit")
+}, customer1);
+questionnaire = precheckStore.getState().questionnaireSessions.find((item) => item.id === questionnaire.id);
+assert.equal(questionnaire.questionnaireStatus, "SUBMITTED");
+precheckResult = precheckStore.dispatch("START_INQUIRY", {
+  productId: "DEMO-PROD-001",
+  questionnaireSessionId: questionnaire.id,
+  idempotencyKey: key("precheck-link")
+}, customer1);
+const linkedPrecheckInquiry = stateInquiry(precheckStore, precheckResult.result);
+questionnaire = precheckStore.getState().questionnaireSessions.find((item) => item.id === questionnaire.id);
+assert.equal(linkedPrecheckInquiry.questionnaireSessionId, questionnaire.id);
+assert.equal(linkedPrecheckInquiry.entryMode, "CARE_PRECHECK");
+assert.equal(questionnaire.inquiryId, linkedPrecheckInquiry.id);
+
+// 0-1. 미지원 제품은 Inquiry/AI/RAG를 만들지 않고 제품 상담 요청으로 대체한다.
+const unsupportedStore = boot();
+const unsupportedInquiryCount = unsupportedStore.getState().inquiries.length;
+let unsupportedResult = unsupportedStore.dispatch("REGISTER_PRODUCT", {
+  productCode: "WPU-UNKNOWN-900",
+  manualModel: "WPU-UNKNOWN-900",
+  modelName: "지원 범위 외 정수기",
+  startedAt: "2026-07-20",
+  installedArea: "사무실",
+  idempotencyKey: key("unsupported-register")
+}, customer6);
+const unsupportedProductId = unsupportedResult.result;
+unsupportedResult = unsupportedStore.dispatch("VALIDATE_PRODUCT", {
+  productId: unsupportedProductId,
+  idempotencyKey: key("unsupported-validate")
+}, customer6);
+assert.equal(unsupportedResult.result.status, "UNSUPPORTED");
+assert.equal(unsupportedResult.result.supportScope, "unsupported");
+assert.equal(unsupportedResult.result.aiAllowed, false);
+assert.equal(unsupportedResult.result.ragAllowed, false);
+assert.deepEqual(Array.from(unsupportedResult.result.evidenceIds), []);
+assert.equal(unsupportedStore.getState().inquiries.length, unsupportedInquiryCount);
+assert.throws(() => unsupportedStore.dispatch("START_INQUIRY", {
+  productId: unsupportedProductId,
+  idempotencyKey: key("unsupported-ai-block")
+}, customer6), (error) => error.code === "MODEL-EXPANSION-01");
+unsupportedResult = unsupportedStore.dispatch("REQUEST_PRODUCT_SUPPORT", {
+  productId: unsupportedProductId,
+  reason: "지원 범위 외 모델 확인",
+  idempotencyKey: key("unsupported-support")
+}, customer6);
+assert.ok(unsupportedStore.getState().productSupportRequests.some((item) => item.id === unsupportedResult.result && item.validationStatus === "UNSUPPORTED"));
+assert.ok(unsupportedStore.getState().notifications.some((item) => item.role === "COUNSELOR" && item.productSupportRequestId === unsupportedResult.result));
+const productSupportRequestId = unsupportedResult.result;
+const duplicateSupport = unsupportedStore.dispatch("REQUEST_PRODUCT_SUPPORT", {
+  productId: unsupportedProductId,
+  reason: "동일 제품 지원 범위 재확인",
+  idempotencyKey: key("unsupported-support-repeat")
+}, customer6);
+assert.equal(duplicateSupport.result, productSupportRequestId);
+assert.equal(unsupportedStore.getState().productSupportRequests.filter((item) => item.productId === unsupportedProductId && item.status !== "COMPLETED").length, 1);
+assert.throws(() => unsupportedStore.dispatch("START_PRODUCT_SUPPORT_CONSULTATION", {
+  productSupportRequestId,
+  idempotencyKey: key("unsupported-support-wrong-role")
+}, customer6), (error) => error.code === "FINALIZE-AUTH-01");
+unsupportedStore.dispatch("START_PRODUCT_SUPPORT_CONSULTATION", {
+  productSupportRequestId,
+  idempotencyKey: key("unsupported-support-start")
+}, counselor);
+assert.equal(unsupportedStore.getState().productSupportRequests.find((item) => item.id === productSupportRequestId).status, "IN_PROGRESS");
+unsupportedStore.dispatch("COMPLETE_PRODUCT_SUPPORT", {
+  productSupportRequestId,
+  note: "현재 기본 MVP 검색 범위 밖 모델임을 확인했습니다.",
+  result: "전용 상담 절차와 공식 고객센터 연결을 안내했습니다.",
+  idempotencyKey: key("unsupported-support-complete")
+}, counselor);
+const completedSupport = unsupportedStore.getState().productSupportRequests.find((item) => item.id === productSupportRequestId);
+assert.equal(completedSupport.status, "COMPLETED");
+assert.equal(completedSupport.assignedCounselorId, counselor.id);
+assert.ok(unsupportedStore.getState().notifications.some((item) => item.role === "CUSTOMER" && item.recipientId === customer6.id && item.productSupportRequestId === productSupportRequestId));
+
+// 같은 상품 코드라도 공식 적용 모델이 일치하지 않으면 검색 범위에 넣지 않는다.
+const mismatchedModelStore = boot();
+let mismatchedResult = mismatchedModelStore.dispatch("REGISTER_PRODUCT", {
+  productCode: "WPUJAC104DWH",
+  manualModel: "WPU-NOT-JAC104D",
+  modelName: "설명서 불일치 제품",
+  startedAt: "2026-07-20",
+  installedArea: "회의실",
+  idempotencyKey: key("mismatched-register")
+}, customer6);
+mismatchedResult = mismatchedModelStore.dispatch("VALIDATE_PRODUCT", {
+  productId: mismatchedResult.result,
+  idempotencyKey: key("mismatched-validate")
+}, customer6);
+assert.equal(mismatchedResult.result.status, "UNSUPPORTED");
+assert.equal(mismatchedResult.result.aiAllowed, false);
+
+// 동일 상품 코드의 공식 관련 모델(JCC104D)은 기본 MVP 범위로 인정한다.
+const relatedManualStore = boot();
+let relatedManualResult = relatedManualStore.dispatch("REGISTER_PRODUCT", {
+  productCode: "WPUJAC104DWH",
+  manualModel: "WPU-JCC104D",
+  modelName: "JCC104D 적용 정수기",
+  startedAt: "2026-07-20",
+  installedArea: "라운지",
+  idempotencyKey: key("related-manual-register")
+}, customer6);
+relatedManualResult = relatedManualStore.dispatch("VALIDATE_PRODUCT", {
+  productId: relatedManualResult.result,
+  idempotencyKey: key("related-manual-validate")
+}, customer6);
+assert.equal(relatedManualResult.result.status, "SUPPORTED");
+assert.equal(relatedManualResult.result.supportScope, "mvp_primary");
+
+// 제품 모델이 바뀌면 이전 문의의 공식 근거를 재사용하지 않는다.
+const modelChangeStore = boot();
+let modelChangeResult = modelChangeStore.dispatch("START_INQUIRY", {
+  productId: "DEMO-PROD-001", idempotencyKey: key("model-change-start")
+}, customer1);
+let modelChangeInquiry = stateInquiry(modelChangeStore, modelChangeResult.result);
+modelChangeStore.dispatch("SUBMIT_SYMPTOM", {
+  inquiryId: modelChangeInquiry.id,
+  symptomCodes: ["LOW_FLOW"],
+  description: "평소보다 출수량이 줄었습니다.",
+  conditions: "다른 수전을 끄고 확인했습니다.",
+  stateVersion: modelChangeInquiry.stateVersion,
+  idempotencyKey: key("model-change-symptom")
+}, customer1);
+modelChangeInquiry = stateInquiry(modelChangeStore, modelChangeInquiry.id);
+assert.ok(modelChangeInquiry.evidenceIds.length > 0);
+modelChangeStore.dispatch("PRODUCT_UPDATED", {
+  productId: "DEMO-PROD-001",
+  productCode: "WPUIAC425SNW",
+  manualModel: "WPU-IAC425",
+  idempotencyKey: key("model-change-update")
+}, customer1);
+modelChangeInquiry = stateInquiry(modelChangeStore, modelChangeInquiry.id);
+assert.equal(modelChangeInquiry.reanalysisRequired, true);
+assert.equal(modelChangeInquiry.aiState, "IDLE");
+assert.deepEqual(Array.from(modelChangeInquiry.evidenceIds), []);
+assert.equal(modelChangeStore.getState().products.find((item) => item.id === "DEMO-PROD-001").supportScope, "expansion_secondary");
 
 // 1. 고객 일반 문의 → 공식 안내 → 자가조치 즉시 완료
 let result = store.dispatch("START_INQUIRY", { productId: "DEMO-PROD-001", idempotencyKey: key("start") }, customer1);
@@ -62,6 +197,8 @@ store.dispatch("SUBMIT_SYMPTOM", {
 inquiry = stateInquiry(store, selfInquiryId);
 assert.equal(inquiry.status, "AI_GUIDANCE");
 assert.equal(inquiry.aiState, "COMPLETED");
+assert.equal(inquiry.aiOutcome, "SAFE_GUIDANCE_READY");
+assert.ok(inquiry.timeline.some((item) => item.event === "SAFE_GUIDANCE_READY"));
 assert.equal(inquiry.topicCode, "symptom_low_flow");
 assert.deepEqual(Array.from(inquiry.evidenceIds), ["EVD-JAC104D-MAN-P38-LOW-FLOW"]);
 
@@ -122,6 +259,26 @@ inquiry = stateInquiry(store, dangerInquiryId);
 assert.equal(inquiry.status, "CONSULTATION_IN_PROGRESS");
 assert.equal(inquiry.safeActions.waterValveClosed, true);
 
+// 2-0. 온수 모듈 위험은 제품 전체가 아니라 근거가 있는 기능만 제한한다.
+const hotStore = boot();
+let hotResult = hotStore.dispatch("START_INQUIRY", { productId: "DEMO-PROD-006", idempotencyKey: key("hot-start") }, customer6);
+let hotInquiry = stateInquiry(hotStore, hotResult.result);
+hotStore.dispatch("SUBMIT_SYMPTOM", {
+  inquiryId: hotInquiry.id,
+  symptomCodes: ["TEMPERATURE"],
+  description: "LCD에 순간온수 모듈 점검 문구가 표시됩니다.",
+  conditions: "출수된 물은 마시지 않았고 전원을 분리했습니다.",
+  displayCode: "순간온수 모듈 점검",
+  stateVersion: hotInquiry.stateVersion,
+  idempotencyKey: key("hot-submit")
+}, customer6);
+hotInquiry = stateInquiry(hotStore, hotInquiry.id);
+assert.equal(hotInquiry.aiOutcome, "DANGER_DETECTED");
+assert.equal(hotInquiry.usageGuidance.usageStatus, "PARTIAL_STOP");
+assert.ok(hotInquiry.usageGuidance.restrictedFunctions.some((item) => item.includes("온수")));
+assert.ok(hotInquiry.usageGuidance.decisionBasis);
+assert.ok(hotInquiry.usageGuidance.nextAction);
+
 // 2-1. 위험도와 별개로 상담 필수로 판정된 문의도 즉시 전환하고 안전조치를 별도 기록
 result = store.dispatch("START_INQUIRY", { productId: "DEMO-PROD-002", idempotencyKey: key("required-start") }, customer2);
 const requiredInquiryId = result.result;
@@ -138,7 +295,11 @@ store.dispatch("SUBMIT_SYMPTOM", {
 inquiry = stateInquiry(store, requiredInquiryId);
 assert.equal(inquiry.requiresConsultation, true);
 assert.equal(inquiry.status, "CONSULTATION_REQUIRED");
-assert.ok(inquiry.timeline.some((item) => item.event === "DANGER_DETECTED"));
+assert.equal(inquiry.aiOutcome, "NO_EVIDENCE");
+assert.equal(inquiry.usageGuidance.usageStatus, "PENDING_CONSULTATION");
+assert.deepEqual(Array.from(inquiry.evidenceIds), []);
+assert.ok(inquiry.timeline.some((item) => item.event === "NO_EVIDENCE"));
+assert.ok(!inquiry.timeline.some((item) => item.event === "DANGER_DETECTED"));
 store.dispatch("REQUEST_CONSULTATION", {
   inquiryId: requiredInquiryId,
   safeActions: { drinkingStopped: true },
@@ -163,6 +324,25 @@ const duplicate = store.dispatch("START_CONSULTATION", {
 assert.equal(duplicate.duplicate, true);
 inquiry = stateInquiry(store, "DEMO-INQ-002");
 assert.equal(inquiry.status, "CONSULTATION_IN_PROGRESS");
+
+const originalSummary = inquiry.aiSummaryOriginal;
+store.dispatch("SAVE_AI_SUMMARY_REVISION", {
+  inquiryId: inquiry.id,
+  text: "고객의 반복 증상과 설치 환경을 함께 확인해야 합니다.",
+  stateVersion: inquiry.stateVersion,
+  idempotencyKey: key("summary-revision")
+}, counselor);
+inquiry = stateInquiry(store, inquiry.id);
+assert.equal(inquiry.aiSummaryOriginal, originalSummary);
+assert.equal(inquiry.aiSummaryRevision.text, "고객의 반복 증상과 설치 환경을 함께 확인해야 합니다.");
+assert.equal(inquiry.aiSummaryRevision.editorId, counselor.id);
+assert.ok(inquiry.timeline.some((item) => item.event === "SAVE_AI_SUMMARY_REVISION"));
+assert.throws(() => store.dispatch("SAVE_AI_SUMMARY_REVISION", {
+  inquiryId: inquiry.id,
+  text: "고객이 임의로 변경하면 안 되는 요약",
+  stateVersion: inquiry.stateVersion,
+  idempotencyKey: key("summary-revision-wrong-role")
+}, customer2), (error) => error.code === "FINALIZE-AUTH-01");
 
 store.dispatch("CONSULTATION_COMPLETED", {
   inquiryId: inquiry.id,
@@ -238,6 +418,15 @@ store.dispatch("VISIT_COMPLETED", {
 inquiry = stateInquiry(store, inquiry.id);
 assert.equal(inquiry.status, "COMPLETION_PENDING");
 assert.equal(stateVisit(store, inquiry.id).status, "COMPLETED");
+let completedState = store.getState();
+let completedProduct = completedState.products.find((item) => item.id === inquiry.productId);
+let completedCare = completedState.careHistory.find((item) => item.visitId === "DEMO-VISIT-004");
+assert.equal(completedProduct.lastCareAt, stateVisit(store, inquiry.id).completedAt);
+assert.equal(completedProduct.careSchedule.status, "PLANNING");
+assert.equal(completedProduct.careSchedule.nextCareAt, null);
+assert.equal(completedProduct.careSchedule.lastVisitId, "DEMO-VISIT-004");
+assert.equal(completedCare.actualCause, "연결 피팅 체결 불량");
+assert.equal(completedCare.technicianId, technician.id);
 
 store.dispatch("SUBMIT_RESOLUTION_FEEDBACK", {
   inquiryId: inquiry.id, resolved: true, comment: "누수가 멈췄습니다.", stateVersion: inquiry.stateVersion, idempotencyKey: key("visit-feedback")
