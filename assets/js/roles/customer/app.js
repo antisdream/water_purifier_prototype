@@ -10,7 +10,6 @@
   var notificationList = document.getElementById('notification-list');
   var notificationCount = document.getElementById('notification-count');
   var productDialog = document.getElementById('product-dialog');
-  var rescheduleDialog = document.getElementById('reschedule-dialog');
   var toastNode = document.getElementById('toast');
   var toastTimer = 0;
 
@@ -50,6 +49,16 @@
     COMPLETED: '분석이 완료되었습니다.',
     FAILED: '처리하지 못했습니다. 입력은 유지됩니다.',
     CANCELLED: '처리가 중단되었습니다.'
+  };
+
+  var VISIT_STATUS_LABELS = {
+    REQUESTED: '방문 검토 중',
+    SCHEDULING: '방문 일정 조율 중',
+    CONFIRMED: '방문 확정',
+    IN_PROGRESS: '방문 점검 중',
+    COMPLETED: '방문 완료',
+    REVISIT_REQUIRED: '추가 방문 필요',
+    CANCELLED: '방문 취소'
   };
 
   var SYMPTOMS = [
@@ -108,18 +117,15 @@
     return new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }).format(date);
   }
 
-  function toLocalInput(value) {
-    var date = value ? new Date(value) : new Date(Date.now() + 24 * 60 * 60 * 1000);
-    if (Number.isNaN(date.getTime())) date = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    var local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-    return local.toISOString().slice(0, 16);
-  }
-
   function statusLabel(code) {
     if (typeof UI.statusLabel === 'function') {
       try { return plainText(UI.statusLabel(code)); } catch (error) { /* fallback below */ }
     }
     return STATUS_LABELS[code] || code || '확인 필요';
+  }
+
+  function visitStatusLabel(code) {
+    return VISIT_STATUS_LABELS[code] || statusLabel(code);
   }
 
   function riskLabel(code) {
@@ -187,10 +193,34 @@
 
   function usageCode(inquiry) {
     if (!inquiry) return '';
+    if (inquiry.usageGuidanceStatus || inquiry.usage_guidance_status) {
+      return inquiry.usageGuidanceStatus || inquiry.usage_guidance_status;
+    }
     if (typeof inquiry.usageGuidance === 'object' && inquiry.usageGuidance) {
-      return inquiry.usageGuidance.usageStatus || inquiry.usageGuidance.status || inquiry.usageGuidance.code || '';
+      return inquiry.usageGuidance.usageGuidanceStatus || inquiry.usageGuidance.usage_guidance_status || inquiry.usageGuidance.usageStatus || inquiry.usageGuidance.status || inquiry.usageGuidance.code || '';
     }
     return inquiry.usageGuidance || '';
+  }
+
+  function usageMessage(inquiry) {
+    if (!inquiry) return '';
+    if (inquiry.usageGuidanceMessage || inquiry.usage_guidance_message) return inquiry.usageGuidanceMessage || inquiry.usage_guidance_message;
+    var guidance = typeof inquiry.usageGuidance === 'object' && inquiry.usageGuidance || {};
+    return guidance.usageGuidanceMessage || guidance.usage_guidance_message || guidance.message || '';
+  }
+
+  function guidanceBasis(inquiry) {
+    if (!inquiry) return '';
+    if (inquiry.guidanceBasis || inquiry.guidance_basis) return inquiry.guidanceBasis || inquiry.guidance_basis;
+    var guidance = typeof inquiry.usageGuidance === 'object' && inquiry.usageGuidance || {};
+    return guidance.guidanceBasis || guidance.guidance_basis || guidance.decisionBasis || '';
+  }
+
+  function guidanceNextAction(inquiry) {
+    if (!inquiry) return '';
+    if (inquiry.nextAction || inquiry.next_action) return inquiry.nextAction || inquiry.next_action;
+    var guidance = typeof inquiry.usageGuidance === 'object' && inquiry.usageGuidance || {};
+    return guidance.nextAction || guidance.next_action || usageMessage(inquiry);
   }
 
   function currentCustomer() {
@@ -265,10 +295,13 @@
 
   function evidenceForInquiry(inquiry) {
     if (!inquiry) return [];
-    var ids = Array.isArray(inquiry.evidenceIds) ? inquiry.evidenceIds : [];
-    return list('evidenceRegistry').filter(function (item) {
-      return ids.indexOf(item.id || item.evidenceId) >= 0;
-    });
+    if (!Store || typeof Store.getInquiryView !== 'function') return [];
+    try {
+      var view = Store.getInquiryView(inquiry.id, actor());
+      return view && Array.isArray(view.evidenceCards) ? view.evidenceCards : [];
+    } catch (error) {
+      return [];
+    }
   }
 
   function actor() {
@@ -278,6 +311,29 @@
       id: customer ? customer.id : app.customerId,
       name: customerName(customer)
     };
+  }
+
+  function allowedActions(inquiry) {
+    var result;
+    if (Store && typeof Store.getAllowedActions === 'function') {
+      try {
+        result = Store.getAllowedActions(inquiry && inquiry.id || null, actor());
+        if (Array.isArray(result)) return result;
+        if (result && Array.isArray(result.allowedActions)) return result.allowedActions;
+        if (result && Array.isArray(result.allowed_actions)) return result.allowed_actions;
+        return [];
+      } catch (error) {
+        /* 초기 화면·이전 저장 데이터는 아래 화면별 fallback으로 안전하게 제한한다. */
+      }
+    }
+    if (inquiry && Array.isArray(inquiry.allowedActions)) return inquiry.allowedActions;
+    if (inquiry && Array.isArray(inquiry.allowed_actions)) return inquiry.allowed_actions;
+    return null;
+  }
+
+  function actionAllowed(inquiry, actionName, fallback) {
+    var actions = allowedActions(inquiry);
+    return actions === null ? Boolean(fallback) : actions.indexOf(actionName) >= 0;
   }
 
   function showToast(message, type) {
@@ -351,6 +407,17 @@
     return html + '</div>';
   }
 
+  function intakeProgress() {
+    return `
+      <nav class="intake-progress" aria-label="사전 문진 진행률">
+        <ol>
+          <li class="is-complete"><span>1/3</span><strong>제품 확인</strong></li>
+          <li class="is-current" aria-current="step"><span>2/3</span><strong>증상·문진</strong></li>
+          <li><span>3/3</span><strong>제출</strong></li>
+        </ol>
+      </nav>`;
+  }
+
   function riskClass(level) {
     if (level === 'DANGER') return 'risk-chip--danger';
     if (level === 'CAUTION') return 'risk-chip--warning';
@@ -390,10 +457,11 @@
 
   function routeForInquiry(inquiry) {
     if (!inquiry) return 'home';
+    if (inquiry.aiState === 'FAILED') return 'questions';
     if (inquiry.status === 'DRAFT') return 'precheck';
     if (inquiry.status === 'QUESTIONNAIRE_IN_PROGRESS') return inquiry.missingFields && inquiry.missingFields.length ? 'questions' : 'precheck';
     if (inquiry.status === 'AI_GUIDANCE') return 'guidance';
-    if (inquiry.aiOutcome === 'NO_EVIDENCE' || inquiry.aiState === 'FAILED') return 'guidance';
+    if (inquiry.aiOutcome === 'NO_EVIDENCE') return 'guidance';
     if (inquiry.status === 'CONSULTATION_REQUIRED' && inquiry.customerActionRequired === 'SAFETY_CONFIRMATION') return 'guidance';
     return 'detail';
   }
@@ -404,9 +472,10 @@
     var support = productSupport(product);
     var latestQuestionnaire = questionnairesForCustomer()[0] || null;
     var reusableQuestionnaire = questionnairesForCustomer().find(function (item) { return item.questionnaireStatus === 'SUBMITTED' && !item.inquiryId; }) || null;
+    var resumableQuestionnaire = questionnairesForCustomer().find(function (item) { return !item.inquiryId && ['UNANSWERED', 'IN_PROGRESS'].indexOf(item.questionnaireStatus) >= 0; }) || null;
     var inquiry = inquiriesForCustomer().find(function (item) {
       return item.status !== 'RESOLVED' && item.status !== 'CANCELLED';
-    }) || inquiriesForCustomer()[0];
+    }) || null;
     var precheckStatus = latestQuestionnaire && latestQuestionnaire.questionnaireStatus || customer && customer.questionnaireStatus || product && (product.questionnaireStatus || product.precheckStatus) || 'NOT_CREATED';
     var schedule = careSchedule(product);
     var precheckLabel = ({
@@ -418,6 +487,9 @@
         '<div class="empty-state"><span class="empty-state__icon">!</span><h3>등록된 제품이 없습니다.</h3><p>제품 코드를 등록하면 지원 범위를 검증하고, 미지원 모델은 AI 분석 없이 상담으로 연결합니다.</p><button class="button button--primary" type="button" data-action="edit-product">제품 등록</button></div></section>';
     }
 
+    var canStartInquiry = actionAllowed(null, 'START_INQUIRY', support.aiAllowed);
+    var canStartPrecheck = actionAllowed(null, 'START_CARE_PRECHECK', support.aiAllowed);
+    var canUpdateProduct = actionAllowed(null, 'PRODUCT_UPDATED', true);
     return `
       <section class="app-screen" data-screen-id="CUST-01">
         ${screenHeader('CUST-01 · CUSTOMER HOME', customerName(customer) + '님, 안녕하세요', '제품 관리와 현재 필요한 행동을 한눈에 확인하세요.')}
@@ -426,23 +498,25 @@
           <h2>${escapeHtml(support.aiAllowed ? nextActionText(inquiry) : '제품 지원 범위를 상담사에게 확인해주세요.')}</h2>
           <p>${support.aiAllowed ? (inquiry ? escapeHtml(inquiry.id) + ' · ' + escapeHtml(statusLabel(inquiry.status)) : '등록된 진행 문의가 없습니다.') : escapeHtml(support.message)}</p>
           <div class="hero-card__actions">
-            ${support.aiAllowed ? (inquiry ? '<button class="button button--light" type="button" data-action="open-inquiry" data-inquiry-id="' + escapeHtml(inquiry.id) + '">이어보기</button>' : '<button class="button button--light" type="button" data-action="start-inquiry">증상 상담</button>') : '<button class="button button--light" type="button" data-action="request-product-support">제품 상담 요청</button>'}
-            ${support.aiAllowed ? '<button class="button button--outline-light" type="button" data-action="start-precheck">사전 문진</button>' : ''}
+            ${support.aiAllowed ? (inquiry ? '<button class="button button--light" type="button" data-action="open-inquiry" data-inquiry-id="' + escapeHtml(inquiry.id) + '">이어보기</button>' : (canStartInquiry ? '<button class="button button--light" type="button" data-action="start-inquiry">증상 상담</button>' : '')) : '<button class="button button--light" type="button" data-action="request-product-support">제품 상담 요청</button>'}
+            ${support.aiAllowed && canStartPrecheck ? '<button class="button button--outline-light" type="button" data-action="start-precheck">사전 문진</button>' : ''}
           </div>
         </article>
 
         ${reusableQuestionnaire && support.aiAllowed ? '<article class="content-card content-card--blue"><span class="card-label">독립 사전 문진 · ' + escapeHtml(reusableQuestionnaire.id) + '</span><h3>제출한 문진으로 증상 상담을 시작할 수 있어요.</h3><p>문진 원문과 답변을 새 문의에 연결하고, 제출 전 내용을 다시 확인합니다.</p><button class="button button--primary button--block" type="button" data-action="start-linked-inquiry" data-questionnaire-id="' + escapeHtml(reusableQuestionnaire.id) + '">이 문진으로 상담 시작</button></article>' : ''}
+        ${resumableQuestionnaire && support.aiAllowed ? '<article class="content-card content-card--warning"><span class="card-label">작성 중 사전 문진 · ' + escapeHtml(resumableQuestionnaire.id) + '</span><h3>이전에 작성하던 문진이 있습니다.</h3><p>저장된 답변을 유지한 채 이어서 작성할 수 있습니다.</p><button class="button button--primary button--block" type="button" data-action="resume-precheck" data-questionnaire-id="' + escapeHtml(resumableQuestionnaire.id) + '">사전 문진 이어쓰기</button></article>' : ''}
 
         <div class="content-stack">
           <article class="content-card">
-            <div class="content-card__header"><div><span class="card-label">지원 제품</span><h3>내 정수기</h3></div><button class="button button--text" type="button" data-action="edit-product">수정</button></div>
+            <div class="content-card__header"><div><span class="card-label">지원 제품</span><h3>내 정수기</h3></div>${canUpdateProduct ? '<button class="button button--text" type="button" data-action="edit-product">수정</button>' : ''}</div>
             <div class="product-summary">
               <div class="product-visual" aria-hidden="true"></div>
               <div>
-                <span class="data-chip">${escapeHtml(support.status === 'SUPPORTED' ? 'MVP 지원' : support.status === 'EXPANSION' ? '후속 확장' : support.status === 'ARCHIVED' ? '보관 모델' : '지원 범위 밖')}</span>
+                <span class="data-chip">${escapeHtml(support.status === 'SUPPORTED' ? 'MVP 지원' : '지원 범위 확인 필요')}</span>
                 <h3>${escapeHtml(modelName(product))}</h3>
                 <code class="product-code">${escapeHtml(modelCode(product) || 'WPUJAC104DWH')}</code>
                 <span class="product-code">설명서 ${escapeHtml(manualModel(product))}</span>
+                <span class="product-code">scope_role · ${escapeHtml(support.supportScope || product.scopeRole || 'unsupported')}</span>
               </div>
             </div>
             <dl class="metadata-grid">
@@ -454,7 +528,7 @@
           </article>
 
           <div class="quick-actions">
-            ${support.aiAllowed ? '<button class="quick-action" type="button" data-action="start-precheck"><span aria-hidden="true">✓</span><strong>사전 문진</strong><small>' + escapeHtml(precheckLabel) + ' · 문의와 분리 저장</small></button><button class="quick-action" type="button" data-action="start-inquiry"><span aria-hidden="true">＋</span><strong>증상 상담</strong><small>증상을 입력하고 공식 안내 확인</small></button>' : '<button class="quick-action" type="button" data-action="request-product-support"><span aria-hidden="true">!</span><strong>제품 상담</strong><small>AI·RAG 실행 없이 지원 범위 확인</small></button>'}
+            ${support.aiAllowed ? (canStartPrecheck ? '<button class="quick-action" type="button" data-action="start-precheck"><span aria-hidden="true">✓</span><strong>사전 문진</strong><small>' + escapeHtml(precheckLabel) + ' · 문의와 분리 저장</small></button>' : '') + (canStartInquiry ? '<button class="quick-action" type="button" data-action="start-inquiry"><span aria-hidden="true">＋</span><strong>증상 상담</strong><small>증상을 입력하고 공식 안내 확인</small></button>' : '') : '<button class="quick-action" type="button" data-action="request-product-support"><span aria-hidden="true">!</span><strong>제품 상담</strong><small>AI·RAG 실행 없이 지원 범위 확인</small></button>'}
             <button class="quick-action" type="button" data-route="schedule"><span aria-hidden="true">□</span><strong>케어 일정</strong><small>${escapeHtml(schedule.label)}</small></button>
             <button class="quick-action" type="button" data-route="inquiries"><span aria-hidden="true">◎</span><strong>문의 내역</strong><small>상담·방문 처리 현황 확인</small></button>
           </div>
@@ -464,16 +538,17 @@
 
   function renderProduct() {
     var product = currentProduct();
-    if (!product) return '<section class="app-screen">' + screenHeader('MY PRODUCT', '내 제품', '제품을 등록한 뒤 지원 범위를 확인합니다.', 'home') + '<div class="empty-state"><span class="empty-state__icon">!</span><h3>등록된 제품이 없습니다.</h3><p>제품 코드를 등록하면 MVP·확장·보관·미지원 범위를 구분합니다.</p><button class="button button--primary" type="button" data-action="edit-product">제품 등록</button></div></section>';
+    if (!product) return '<section class="app-screen">' + screenHeader('MY PRODUCT', '내 제품', '제품을 등록한 뒤 지원 범위를 확인합니다.', 'home') + '<div class="empty-state"><span class="empty-state__icon">!</span><h3>등록된 제품이 없습니다.</h3><p>제품 코드를 등록하면 MVP·확장·미지원·삭제 레거시 범위를 구분합니다.</p><button class="button button--primary" type="button" data-action="edit-product">제품 등록</button></div></section>';
     var support = productSupport(product);
     var supportRequest = latestProductSupportRequest(product);
+    var modelHistory = Array.isArray(product.modelChangeHistory) ? product.modelChangeHistory : [];
     return `
       <section class="app-screen" data-screen-id="CUST-01-PRODUCT">
-        ${screenHeader('MY PRODUCT', '내 제품', 'FIX 범위의 지원 제품 정보입니다.', 'home')}
+        ${screenHeader('MY PRODUCT', '내 제품', '화면설계 v13 범위의 지원 제품 정보입니다.', 'home')}
         <article class="content-card content-card--tinted">
           <div class="product-summary">
             <div class="product-visual" aria-hidden="true"></div>
-            <div><span class="data-chip">scope_role · mvp_primary</span><h3>${escapeHtml(modelName(product))}</h3><code class="product-code">${escapeHtml(modelCode(product) || 'WPUJAC104DWH')}</code><span class="product-code">manual_model · ${escapeHtml(manualModel(product))}</span></div>
+            <div><span class="data-chip">scope_role · ${escapeHtml(support.supportScope || product.scopeRole || 'unsupported')}</span><h3>${escapeHtml(modelName(product))}</h3><code class="product-code">${escapeHtml(modelCode(product) || 'WPUJAC104DWH')}</code><span class="product-code">manual_model · ${escapeHtml(manualModel(product))}</span></div>
           </div>
         </article>
         <article class="content-card ${support.aiAllowed ? '' : 'content-card--danger'}"><div class="content-card__header"><h3>제품 지원 범위</h3><span class="status-chip">${escapeHtml(support.status)}</span></div><p>${escapeHtml(support.message)}</p>${support.aiAllowed ? '' : supportRequest && supportRequest.status !== 'COMPLETED' ? '<button class="button button--secondary button--block" type="button" disabled>' + escapeHtml(supportRequest.status === 'IN_PROGRESS' ? '상담원 확인 중' : '제품 상담 접수됨') + '</button>' : '<button class="button button--secondary button--block" type="button" data-action="request-product-support">AI 분석 없이 제품 상담 요청</button>'}</article>
@@ -489,6 +564,7 @@
             <div><dt>케어 기준</dt><dd>${escapeHtml(careSchedule(product).source)}</dd></div>
           </dl>
         </article>
+        ${modelHistory.length ? '<details class="content-card customer-input-details"><summary>제품 모델 변경 이력</summary><div class="content-stack">' + modelHistory.map(function (entry) { return '<p><strong>' + escapeHtml(entry.previousProductCode || '이전 제품') + ' / ' + escapeHtml(entry.previousManualModel || '이전 매뉴얼') + '</strong><br>→ ' + escapeHtml(entry.productCode || modelCode(product)) + ' / ' + escapeHtml(entry.manualModel || manualModel(product)) + '<br><small>' + escapeHtml(formatDateTime(entry.changedAt)) + ' · ' + escapeHtml(entry.changedBy || '고객') + '</small></p>'; }).join('') + '</div></details>' : ''}
         <div class="inline-notice"><strong>i</strong><p>확정된 MVP 지원 범위와 공식 근거가 있는 제품 정보만 표시합니다.</p></div>
       </section>`;
   }
@@ -499,10 +575,15 @@
     var independent = Boolean(app.questionnaireSessionId);
     var selected = Array.isArray(inquiry.symptomCodes) ? inquiry.symptomCodes : [];
     var answers = inquiry.answers || {};
+    var reusedQuestionnaireId = !independent && (inquiry.reusedFromQuestionnaireId || inquiry.questionnaireSessionId);
+    var reusedQuestionnaire = reusedQuestionnaireId ? questionnairesForCustomer().find(function (item) { return item.id === reusedQuestionnaireId; }) : null;
+    var canSubmit = independent || actionAllowed(inquiry, 'SUBMIT_SYMPTOM', ['DRAFT', 'QUESTIONNAIRE_IN_PROGRESS'].indexOf(inquiry.status) >= 0);
+    var canCancel = independent || actionAllowed(inquiry, 'CANCEL_INQUIRY', ['DRAFT', 'QUESTIONNAIRE_IN_PROGRESS'].indexOf(inquiry.status) >= 0);
     return `
       <section class="app-screen" data-screen-id="CUST-02">
         ${screenHeader('CUST-02 · PRE-CHECK', independent ? '독립 사전 문진' : '증상 문의·문진 입력', independent ? '문의번호를 만들지 않고 문진만 저장합니다. 제출 후 이 문진으로 상담을 시작할 수 있습니다.' : '아는 내용만 입력해도 됩니다. 선택한 내용은 다음 단계에서 다시 묻지 않습니다.', 'home')}
-        ${progress(1)}
+        ${intakeProgress()}
+        ${reusedQuestionnaireId ? '<div class="reused-answer-badge"><span>이전 답변 사용</span><strong>' + escapeHtml(reusedQuestionnaireId) + '</strong><small>' + escapeHtml(reusedQuestionnaire ? formatDateTime(reusedQuestionnaire.updatedAt || reusedQuestionnaire.createdAt) : '연결된 사전 문진') + ' 기준 · 필요한 내용은 제출 전에 수정할 수 있습니다.</small></div>' : ''}
         <form id="symptom-form" novalidate>
           <fieldset class="form-section">
             <legend>대표 증상 <small class="field-help">복수 선택 가능 · 선택하지 않아도 됨</small></legend>
@@ -526,9 +607,9 @@
           <div class="inline-notice inline-notice--danger"><strong>!</strong><p>누수, 전기·화상 위험이 의심되면 제품 사용을 중지하세요. 확인되지 않은 표시 코드는 의미를 추정하지 않고 원문 그대로 저장해 상담을 연결합니다.</p></div>
           <div class="button-row button-row--wrap">
             <button class="button button--secondary" type="submit" name="submitMode" value="draft">임시 저장</button>
-            <button class="button button--primary" type="submit" name="submitMode" value="submit">${independent ? '사전 문진 제출' : '증상 제출'}</button>
+            ${canSubmit ? '<button class="button button--primary" type="submit" name="submitMode" value="submit">' + (independent ? '사전 문진 제출' : '증상 제출') + '</button>' : ''}
           </div>
-          <button class="button button--text button--block" type="button" data-action="${independent ? 'cancel-precheck' : 'cancel-inquiry'}">${independent ? '사전 문진 취소' : '문의 취소'}</button>
+          ${canCancel ? '<button class="button button--text button--block" type="button" data-action="' + (independent ? 'cancel-precheck' : 'cancel-inquiry') + '">' + (independent ? '사전 문진 취소' : '문의 취소') + '</button>' : ''}
         </form>
       </section>`;
   }
@@ -549,11 +630,28 @@
       }).join('') + '</div></fieldset>';
   }
 
+  function renderCustomerInputDetails(inquiry, title) {
+    var answers = inquiry && inquiry.answers || {};
+    var answerRows = Object.keys(answers).map(function (key) {
+      var value = Array.isArray(answers[key]) ? answers[key].join(' · ') : answers[key];
+      return '<div><dt>' + escapeHtml(QUESTION_DEFINITIONS[key] && QUESTION_DEFINITIONS[key].label || key) + '</dt><dd>' + escapeHtml(value || '미입력') + '</dd></div>';
+    }).join('');
+    var symptomLabels = (inquiry.symptomCodes || []).map(function (code) {
+      var item = SYMPTOMS.find(function (symptom) { return symptom.code === code; });
+      return item ? item.label : code;
+    }).join(' · ') || '선택 없음';
+    return '<details class="content-card customer-input-details"><summary>' + escapeHtml(title || '고객 원문·이전 답변 펼쳐보기') + '</summary><dl class="metadata-grid"><div><dt>대표 증상</dt><dd>' + escapeHtml(symptomLabels) + '</dd></div><div><dt>고객 원문</dt><dd>' + escapeHtml(inquiry.description || '미입력') + '</dd></div><div><dt>발생 조건</dt><dd>' + escapeHtml(inquiry.conditions || '미입력') + '</dd></div><div><dt>표시 문구·코드</dt><dd>' + escapeHtml(inquiry.displayCode || '없음') + '</dd></div>' + answerRows + '</dl></details>';
+  }
+
   function renderQuestions() {
     var inquiry = currentInquiry();
     if (!inquiry) return renderHome();
     var missing = Array.isArray(inquiry.missingFields) ? inquiry.missingFields : [];
     var answers = inquiry.answers || {};
+    var canSubmitAnswers = actionAllowed(inquiry, 'SUBMIT_ANSWERS', inquiry.status === 'QUESTIONNAIRE_IN_PROGRESS');
+    var canRequestConsultation = actionAllowed(inquiry, 'REQUEST_CONSULTATION', inquiry.aiState === 'FAILED');
+    var canRetry = actionAllowed(inquiry, 'RETRY_AI_PROCESS', Number(inquiry.retryCount || 0) < Number(window.WaterCareConfig && window.WaterCareConfig.aiMaxRetries || 2));
+    var symptomSummary = inquiry.description || (inquiry.symptomCodes || []).map(function (code) { var item = SYMPTOMS.find(function (symptom) { return symptom.code === code; }); return item ? item.label : code; }).join(' · ') || '고객 입력을 확인 중입니다.';
     if (!missing.length && inquiry.aiState === 'COMPLETED') return renderGuidance();
     return `
       <section class="app-screen" data-screen-id="CUST-03">
@@ -562,8 +660,10 @@
         <article class="content-card content-card--blue">
           <div class="ai-state">${inquiry.aiState !== 'FAILED' ? '<span class="ai-state__pulse" aria-hidden="true"></span>' : '<span aria-hidden="true">!</span>'}<div><h3>${escapeHtml(AI_LABELS[inquiry.aiState] || AI_LABELS.CHECKING_MISSING_FIELDS)}</h3><p>입력 내용은 유지되며 공식 근거와 안전 기준을 함께 확인합니다.</p></div></div>
         </article>
-        ${inquiry.aiState === 'FAILED' ? '<article class="content-card content-card--danger"><h3>분석을 완료하지 못했습니다.</h3><p>입력은 안전하게 보관되었습니다. 실패 단계부터 다시 시도하거나 상담을 요청할 수 있습니다.</p><div class="button-row"><button class="button button--secondary" type="button" data-action="retry-ai">다시 시도</button><button class="button button--danger" type="button" data-action="request-consultation">상담 요청</button></div></article>' : ''}
-        ${missing.length ? '<form id="answers-form">' + missing.map(function (code) { return renderQuestionField(code, answers[code]); }).join('') + '<button class="button button--primary button--block" type="submit">답변 제출</button></form>' : '<div class="empty-state"><span class="empty-state__icon">✓</span><h3>추가 질문이 없습니다.</h3><p>공식 근거와 안내를 확인할 수 있습니다.</p><button class="button button--primary" type="button" data-route="guidance">안내 확인</button></div>'}
+        <article class="content-card"><span class="card-label">증상 요약</span><h3>${escapeHtml(symptomSummary)}</h3></article>
+        ${renderCustomerInputDetails(inquiry, '고객 원문·이전 답변 펼쳐보기')}
+        ${inquiry.aiState === 'FAILED' ? '<article class="content-card content-card--danger"><h3>분석을 완료하지 못했습니다.</h3><p>입력은 안전하게 보관되었습니다. 실패 단계부터 다시 시도하거나 상담을 요청할 수 있습니다.</p><dl class="failure-metadata"><div><dt>실패 단계</dt><dd>' + escapeHtml(inquiry.failedStage || '확인 필요') + '</dd></div><div><dt>오류 코드</dt><dd>' + escapeHtml(inquiry.errorCode || inquiry.error_code || 'AI-FAILED-01') + '</dd></div><div><dt>재시도</dt><dd>' + escapeHtml(String(Number(inquiry.retryCount || 0))) + '회</dd></div></dl><div class="button-row">' + (canRetry ? '<button class="button button--secondary" type="button" data-action="retry-ai">실패 단계부터 다시 시도</button>' : '<span class="field-help">자동 재시도 한도를 초과했습니다.</span>') + (canRequestConsultation ? '<button class="button button--danger" type="button" data-action="request-consultation">상담 요청</button>' : '') + '</div></article>' : ''}
+        ${missing.length ? '<form id="answers-form">' + missing.map(function (code) { return renderQuestionField(code, answers[code]); }).join('') + (canSubmitAnswers ? '<button class="button button--primary button--block" type="submit">답변 제출</button>' : '') + '</form>' : inquiry.aiState === 'FAILED' ? '<div class="inline-notice"><strong>i</strong><p>기존 입력을 수정하지 않고 재시도하거나 상담을 요청할 수 있습니다.</p></div>' : '<div class="empty-state"><span class="empty-state__icon">✓</span><h3>추가 질문이 없습니다.</h3><p>공식 근거와 안내를 확인할 수 있습니다.</p><button class="button button--primary" type="button" data-route="guidance">안내 확인</button></div>'}
       </section>`;
   }
 
@@ -577,6 +677,26 @@
     }
   }
 
+  function listText(value) {
+    if (Array.isArray(value)) return value.filter(Boolean).join(' · ');
+    return String(value || '').trim();
+  }
+
+  function evidencePolicyText(evidence, names) {
+    for (var index = 0; index < names.length; index += 1) {
+      var value = listText(evidence && evidence[names[index]]);
+      if (value) return value;
+    }
+    return '';
+  }
+
+  function evidenceClassification(evidence) {
+    var code = String(evidence && (evidence.dataClassification || evidence.data_classification || evidence.sourceType || evidence.source_type) || '').toLowerCase();
+    if (code.indexOf('team') >= 0) return { code: 'team', label: '팀 설계' };
+    if (code.indexOf('synthetic') >= 0 || code.indexOf('demo') >= 0) return { code: 'synthetic', label: '합성 시연' };
+    return { code: 'official', label: '공식 근거' };
+  }
+
   function evidenceCard(evidence, index) {
     var title = evidence.documentTitle || evidence.documentName || evidence.title || 'WPU-JAC104D/JCC104D 사용설명서';
     var version = evidence.version || evidence.documentVersion || 'REV.00';
@@ -585,12 +705,16 @@
     var verified = evidence.verificationLabel || evidence.verificationStatus || '공식 근거 확인 완료';
     var landing = safeUrl(evidence.sourceLandingUrl || evidence.source_landing_url);
     var download = safeUrl(evidence.sourceDirectDownloadUrl || evidence.source_direct_download_url);
+    var classification = evidenceClassification(evidence);
+    var safeActions = evidencePolicyText(evidence, ['safeActions', 'safe_actions']);
+    var escalationConditions = evidencePolicyText(evidence, ['escalationConditions', 'escalation_conditions']);
+    var prohibitedActions = evidencePolicyText(evidence, ['prohibitedActions', 'prohibited_actions']);
     var detailId = 'evidence-detail-' + index;
     return `
       <article class="evidence-card">
-        <span class="evidence-card__type">공식 매뉴얼</span>
+        <div class="evidence-card__badges"><span class="evidence-card__type">공식 매뉴얼</span><span class="classification-badge classification-badge--${classification.code}">${escapeHtml(classification.label)}</span></div>
         <h4>${escapeHtml(title)}</h4>
-        <dl><dt>버전</dt><dd>${escapeHtml(version)}</dd><dt>페이지</dt><dd>${escapeHtml(page)}</dd><dt>근거 요약</dt><dd>${escapeHtml(summary)}</dd><dt>검증 상태</dt><dd>${escapeHtml(verified)}</dd></dl>
+        <dl><dt>버전</dt><dd>${escapeHtml(version)}</dd><dt>페이지</dt><dd>${escapeHtml(page)}</dd><dt>근거 요약</dt><dd>${escapeHtml(summary)}</dd><dt>검증 상태</dt><dd>${escapeHtml(verified)}</dd>${safeActions ? '<dt>안전조치</dt><dd>' + escapeHtml(safeActions) + '</dd>' : ''}${escalationConditions ? '<dt>상담 조건</dt><dd>' + escapeHtml(escalationConditions) + '</dd>' : ''}${prohibitedActions ? '<dt>금지 행동</dt><dd>' + escapeHtml(prohibitedActions) + '</dd>' : ''}</dl>
         <div class="evidence-card__actions">
           ${landing ? '<a href="' + escapeHtml(landing) + '" target="_blank" rel="noopener noreferrer">공식 출처 보기 ↗</a>' : ''}
           ${download ? '<a href="' + escapeHtml(download) + '" target="_blank" rel="noopener noreferrer">설명서 PDF 열기 ↗</a>' : ''}
@@ -601,6 +725,7 @@
   }
 
   function guidanceValue(inquiry, key, fallback) {
+    if (key === 'currentAction' && guidanceNextAction(inquiry)) return guidanceNextAction(inquiry);
     var guidance = inquiry.guidance || inquiry.aiGuidance || {};
     var value = guidance[key];
     if (Array.isArray(value)) return value.join(' · ');
@@ -610,32 +735,38 @@
   function renderGuidance() {
     var inquiry = currentInquiry();
     if (!inquiry) return renderHome();
-    var danger = inquiry.riskLevel === 'DANGER' && inquiry.aiOutcome === 'DANGER_DETECTED';
+    var danger = inquiry.riskLevel === 'DANGER';
+    var canRequestConsultation = actionAllowed(inquiry, 'REQUEST_CONSULTATION', inquiry.status !== 'RESOLVED' && inquiry.status !== 'CANCELLED');
+    var canSelfResolve = actionAllowed(inquiry, 'CUSTOMER_REPORTED_SELF_RESOLVED', inquiry.status === 'AI_GUIDANCE' && !inquiry.requiresConsultation && inquiry.riskLevel !== 'DANGER');
     var noEvidence = inquiry.aiOutcome === 'NO_EVIDENCE';
-    var aiFailed = inquiry.aiState === 'FAILED';
     var evidence = evidenceForInquiry(inquiry);
     var usage = usageCode(inquiry);
+    var evidenceSafeActions = evidence.map(function (item) { return evidencePolicyText(item, ['safeActions', 'safe_actions']); }).filter(Boolean).join(' · ');
+    var evidenceEscalations = evidence.map(function (item) { return evidencePolicyText(item, ['escalationConditions', 'escalation_conditions']); }).filter(Boolean).join(' · ');
+    var evidenceProhibited = evidence.map(function (item) { return evidencePolicyText(item, ['prohibitedActions', 'prohibited_actions']); }).filter(Boolean).join(' · ');
     return `
       <section class="app-screen" data-screen-id="CUST-04">
         ${screenHeader('CUST-04 · OFFICIAL GUIDANCE', '공식 근거·안전 안내', '공식 문서 근거와 현재 필요한 행동을 순서대로 확인하세요.', inquiry.missingFields && inquiry.missingFields.length ? 'questions' : 'precheck')}
         ${progress(3)}
         <div class="guidance-order">
-          <article class="guidance-card ${danger || noEvidence || aiFailed ? 'guidance-card--danger' : ''}"><h3>현재 해야 할 행동</h3><p>${escapeHtml(guidanceValue(inquiry, 'currentAction', danger ? inquiry.usageGuidance.nextAction : noEvidence ? '현재 범위의 공식 근거가 없어 임의 안내를 제공하지 않습니다. 상담사에게 연결합니다.' : aiFailed ? '입력은 보존되었습니다. 실패 단계부터 다시 시도하거나 상담을 요청하세요.' : '아래 공식 안내에 따라 안전하게 확인해주세요.'))}</p></article>
-          <article class="guidance-card ${danger ? 'guidance-card--danger' : ''}"><h3>위험도와 사용 제한</h3><p><span class="risk-chip ${riskClass(inquiry.riskLevel)}">${escapeHtml(riskLabel(inquiry.riskLevel))}</span> <span class="usage-chip ${usage === 'TOTAL_STOP' ? 'usage-chip--danger' : ''}">${escapeHtml(usageLabel(usage || 'NORMAL'))}</span></p>${inquiry.usageGuidance && inquiry.usageGuidance.restrictedFunctions && inquiry.usageGuidance.restrictedFunctions.length ? '<small>제한 기능 · ' + escapeHtml(inquiry.usageGuidance.restrictedFunctions.join(' · ')) + '</small>' : ''}</article>
-          <article class="guidance-card"><h3>공식 안전조치</h3><p>${escapeHtml(guidanceValue(inquiry, 'safetyActions', danger ? '누수 시 원수 밸브를 잠그고 전원을 분리하세요. 순간온수 경고 시 음용하지 마세요.' : '제품 외관과 급수 상태를 안전한 범위에서 확인하세요.'))}</p></article>
-          <article class="guidance-card"><h3>상담 조건</h3><p>${escapeHtml(guidanceValue(inquiry, 'consultationCondition', danger ? '안전조치 여부와 관계없이 즉시 상담이 필요합니다.' : '증상이 지속되거나 조치를 수행하기 어렵다면 상담을 요청하세요.'))}</p></article>
+          <article class="guidance-card ${danger || noEvidence ? 'guidance-card--danger' : ''}"><h3>현재 해야 할 행동</h3><p>${escapeHtml(guidanceValue(inquiry, 'currentAction', danger ? guidanceNextAction(inquiry) : noEvidence ? '현재 범위의 공식 근거가 없어 임의 안내를 제공하지 않습니다. 상담사에게 연결합니다.' : '아래 공식 안내에 따라 안전하게 확인해주세요.'))}</p></article>
+          <article class="guidance-card ${danger ? 'guidance-card--danger' : ''}"><h3>위험도와 사용 제한</h3><p><span class="risk-chip ${riskClass(inquiry.riskLevel)}">${escapeHtml(riskLabel(inquiry.riskLevel))}</span> <span class="usage-chip ${usage === 'TOTAL_STOP' ? 'usage-chip--danger' : ''}">${escapeHtml(usageLabel(usage || 'NORMAL'))}</span></p>${usageMessage(inquiry) ? '<small>' + escapeHtml(usageMessage(inquiry)) + '</small>' : ''}${inquiry.usageGuidance && inquiry.usageGuidance.restrictedFunctions && inquiry.usageGuidance.restrictedFunctions.length ? '<small>제한 기능 · ' + escapeHtml(inquiry.usageGuidance.restrictedFunctions.join(' · ')) + '</small>' : ''}${guidanceBasis(inquiry) ? '<small>판단 근거 · ' + escapeHtml(guidanceBasis(inquiry)) + '</small>' : ''}</article>
+          <article class="guidance-card"><h3>공식 안전조치</h3><p>${escapeHtml(guidanceValue(inquiry, 'safetyActions', evidenceSafeActions || (danger ? guidanceNextAction(inquiry) : '제품 외관과 급수 상태를 안전한 범위에서 확인하세요.')))}</p></article>
+          <article class="guidance-card"><h3>상담 조건</h3><p>${escapeHtml(guidanceValue(inquiry, 'consultationCondition', evidenceEscalations || (danger ? '안전조치 여부와 관계없이 즉시 상담이 필요합니다.' : '증상이 지속되거나 조치를 수행하기 어렵다면 상담을 요청하세요.')))}</p></article>
           <article class="guidance-card"><h3>공식 근거</h3><div class="content-stack">${evidence.length ? evidence.map(evidenceCard).join('') : '<p>검증된 공식 근거가 없습니다. 자가조치 대신 상담을 연결합니다.</p>'}</div></article>
           <article class="guidance-card"><h3>증상 요약</h3><p>${escapeHtml(inquiry.description || (inquiry.symptomCodes || []).map(function (code) { var item = SYMPTOMS.find(function (symptom) { return symptom.code === code; }); return item ? item.label : code; }).join(', ') || '고객 입력 내용을 확인 중입니다.')}</p></article>
-          <article class="guidance-card ${danger ? 'guidance-card--danger' : ''}"><h3>금지 행동</h3><p>${escapeHtml(guidanceValue(inquiry, 'prohibitedActions', '제품을 분해하거나 확인되지 않은 방법으로 수리하지 마세요.'))}</p></article>
+          <article class="guidance-card ${danger ? 'guidance-card--danger' : ''}"><h3>금지 행동</h3><p>${escapeHtml(guidanceValue(inquiry, 'prohibitedActions', evidenceProhibited || '제품을 분해하거나 확인되지 않은 방법으로 수리하지 마세요.'))}</p></article>
         </div>
-        ${danger ? '<button class="button button--danger button--block" type="button" data-route="action">안전조치 확인·상담 요청</button>' : noEvidence ? '<button class="button button--primary button--block" type="button" data-action="request-consultation">상담 요청</button>' : aiFailed ? '<div class="button-row"><button class="button button--secondary" type="button" data-action="retry-ai">실패 단계 재시도</button><button class="button button--primary" type="button" data-action="request-consultation">상담 요청</button></div>' : '<button class="button button--primary button--block" type="button" data-route="action">조치 결과 입력</button>'}
+        ${danger ? '<button class="button button--danger button--block" type="button" data-route="action">안전조치 확인·상담 요청</button>' : noEvidence ? (canRequestConsultation ? '<button class="button button--primary button--block" type="button" data-action="request-consultation">상담 요청</button>' : '<button class="button button--primary button--block" type="button" data-route="detail">상담 진행 현황</button>') : '<button class="button button--primary button--block" type="button" data-route="action">조치 결과 입력</button>'}
       </section>`;
   }
 
   function renderAction() {
     var inquiry = currentInquiry();
     if (!inquiry) return renderHome();
-    var danger = inquiry.riskLevel === 'DANGER' && inquiry.aiOutcome === 'DANGER_DETECTED';
+    var canRequestConsultation = actionAllowed(inquiry, 'REQUEST_CONSULTATION', ['AI_GUIDANCE', 'CONSULTATION_REQUIRED', 'COMPLETION_PENDING', 'QUESTIONNAIRE_IN_PROGRESS'].indexOf(inquiry.status) >= 0);
+    var canSelfResolve = actionAllowed(inquiry, 'CUSTOMER_REPORTED_SELF_RESOLVED', inquiry.status === 'AI_GUIDANCE' && inquiry.riskLevel !== 'DANGER' && !inquiry.requiresConsultation);
+    var danger = inquiry.riskLevel === 'DANGER';
     if (danger) {
       var safeActions = inquiry.safeActions || {};
       return `
@@ -650,7 +781,7 @@
               <label class="safety-check"><input type="checkbox" name="drinkingStopped"${safeActions.drinkingStopped ? ' checked' : ''}><span>안내가 완료될 때까지 음용을 중지했습니다.</span></label>
             </div>
             <label class="field"><span>상담사에게 전달할 내용 <small>선택</small></span><textarea name="note" maxlength="300" placeholder="조치하기 어려운 상황이나 현장 상태를 알려주세요."></textarea></label>
-            <button class="button button--danger button--block" type="submit">상담 요청</button>
+            ${canRequestConsultation ? '<button class="button button--danger button--block" type="submit">상담 요청</button>' : '<p class="field-help">현재 상태에서는 상담 요청을 다시 보낼 수 없습니다.</p>'}
           </form>
         </section>`;
     }
@@ -660,22 +791,26 @@
         ${progress(4)}
         <form id="action-result-form">
           <fieldset class="form-section">
+            <legend>조치 수행 여부</legend>
+            <div class="choice-grid choice-grid--single"><label class="choice-card"><input type="radio" name="actionPerformed" value="YES" required><span><strong>수행함</strong> · 안내된 조치를 확인했습니다.</span></label><label class="choice-card"><input type="radio" name="actionPerformed" value="NO" required><span><strong>수행하지 않음</strong> · 어렵거나 위험해 상담이 필요합니다.</span></label></div>
+          </fieldset>
+          <fieldset class="form-section">
             <legend>조치 수행 결과</legend>
             <div class="result-choice">
               ${[
-                ['RESOLVED', '해결됨', '문의가 즉시 완료됩니다.'],
+                canSelfResolve ? ['RESOLVED', '해결됨', '문의가 즉시 완료됩니다.'] : null,
                 ['IMPROVED', '일부 개선', '상담사가 추가 확인합니다.'],
                 ['SAME', '동일', '상담사가 증상을 이어서 확인합니다.'],
                 ['WORSE', '악화', '우선 상담 대상으로 연결합니다.'],
                 ['NOT_PERFORMED', '수행하지 않음', '어려웠던 이유와 함께 상담을 연결합니다.']
-              ].map(function (item) {
+              ].filter(function (item) { return item && (item[0] === 'RESOLVED' || canRequestConsultation); }).map(function (item) {
                 return '<label class="choice-card"><input type="radio" name="result" value="' + item[0] + '" required><span><strong>' + item[1] + '</strong>&nbsp;·&nbsp;' + item[2] + '</span></label>';
               }).join('')}
             </div>
           </fieldset>
-          <label class="field"><span>수행한 조치</span><textarea name="performedAction" maxlength="300" placeholder="수행한 조치와 확인한 결과를 적어주세요."></textarea></label>
-          <button class="button button--primary button--block" type="submit">결과 제출</button>
-          <button class="button button--secondary button--block" type="button" data-action="request-consultation">바로 상담 요청</button>
+          <label class="field"><span>수행한 조치 또는 미수행 사유</span><textarea name="performedAction" maxlength="300" placeholder="수행한 조치나 수행하기 어려웠던 이유를 적어주세요."></textarea></label>
+          ${(canSelfResolve || canRequestConsultation) ? '<button class="button button--primary button--block" type="submit">결과 제출</button>' : ''}
+          ${canRequestConsultation ? '<button class="button button--secondary button--block" type="button" data-action="request-consultation">바로 상담 요청</button>' : ''}
         </form>
       </section>`;
   }
@@ -699,15 +834,18 @@
     if (inquiry.resolutionFeedback) {
       return '<article class="content-card content-card--success"><h3>해결 피드백이 전달되었습니다.</h3><p>담당자가 확인한 뒤 문의를 최종 완료합니다.</p><span class="status-chip">담당자 최종 확인 중</span></article>';
     }
+    var canResolve = actionAllowed(inquiry, 'SUBMIT_RESOLUTION_FEEDBACK', true);
+    var canUnresolve = actionAllowed(inquiry, 'CUSTOMER_REPORTED_UNRESOLVED', true);
+    var canRequestConsultation = actionAllowed(inquiry, 'REQUEST_CONSULTATION', true);
     return `
       <article class="content-card content-card--warning">
         <h3>처리 결과를 확인해주세요.</h3>
         <p>상담 또는 방문 결과를 확인하고 해결 여부를 선택해주세요.</p>
         <div class="button-row button-row--wrap">
-          <button class="button button--primary" type="button" data-action="submit-feedback" data-feedback="RESOLVED">해결됨</button>
-          <button class="button button--secondary" type="button" data-action="submit-feedback" data-feedback="UNRESOLVED">해결되지 않음</button>
+          ${canResolve ? '<button class="button button--primary" type="button" data-action="submit-feedback" data-feedback="RESOLVED">해결됨</button>' : ''}
+          ${canUnresolve ? '<button class="button button--secondary" type="button" data-action="submit-feedback" data-feedback="UNRESOLVED">해결되지 않음</button>' : ''}
         </div>
-        <button class="button button--text button--block" type="button" data-action="request-consultation">상담 재요청</button>
+        ${canRequestConsultation ? '<button class="button button--text button--block" type="button" data-action="request-consultation">상담 재요청</button>' : ''}
       </article>`;
   }
 
@@ -719,15 +857,23 @@
     var owner = currentOwner(inquiry);
     var usage = usageCode(inquiry);
     var danger = inquiry.riskLevel === 'DANGER';
+    var finalizedByType = String(inquiry.finalizedByType || inquiry.finalized_by_type || '').toLowerCase();
+    var selfFinalized = finalizedByType === 'customer_self' || inquiry.outcome === 'SELF_RESOLVED';
+    var finalizerRoleLabel = finalizedByType === 'engineer' || finalizedByType === 'technician' ? '방문기사' : finalizedByType === 'counselor' ? '상담사' : '담당자';
+    var finalizationHtml = selfFinalized
+      ? '<p><strong>완료 유형</strong><br>고객 자가 해결로 즉시 완료</p><small>별도의 담당자 최종 확인이 필요하지 않습니다.</small>'
+      : '<p><strong>완료 유형</strong><br>' + escapeHtml(finalizerRoleLabel) + ' 최종 완료</p><p>고객 피드백: ' + escapeHtml(inquiry.resolutionFeedback ? '제출 완료' : '미제출') + '<br>최종 완료 상태: ' + (inquiry.status === 'RESOLVED' ? '완료' : '대기') + '</p>' + (inquiry.finalizedBy ? '<small>' + escapeHtml(inquiry.finalizedBy) + ' · ' + escapeHtml(formatDateTime(inquiry.finalizedAt)) + '</small>' : '');
     return `
       <section class="app-screen" data-screen-id="CUST-06">
         ${screenHeader('CUST-06 · INQUIRY DETAIL', '문의 상세', '상담과 방문 처리 결과를 하나의 흐름으로 확인합니다.', 'inquiries')}
         <article class="content-card ${danger ? 'content-card--danger' : 'content-card--tinted'}">
           <div class="content-card__header"><div><span class="card-label">${escapeHtml(inquiry.id)}</span><h3>${escapeHtml((inquiry.symptomCodes || []).map(function (code) { var item = SYMPTOMS.find(function (symptom) { return symptom.code === code; }); return item ? item.label : code; }).join(', ') || '증상 문의')}</h3></div><span class="status-chip ${inquiry.status === 'RESOLVED' ? 'status-chip--neutral' : ''}">${escapeHtml(statusLabel(inquiry.status))}</span></div>
           <div class="button-row button-row--wrap"><span class="risk-chip ${riskClass(inquiry.riskLevel)}">${escapeHtml(riskLabel(inquiry.riskLevel))}</span><span class="usage-chip ${danger || usage === 'TOTAL_STOP' ? 'usage-chip--danger' : ''}">${escapeHtml(usageLabel(usage || 'NORMAL'))}</span></div>
+          ${usageMessage(inquiry) ? '<p>' + escapeHtml(usageMessage(inquiry)) + '</p>' : ''}
+          ${guidanceBasis(inquiry) ? '<small>판단 근거 · ' + escapeHtml(guidanceBasis(inquiry)) + '</small>' : ''}
         </article>
         ${renderFeedbackActions(inquiry)}
-        ${danger && inquiry.status !== 'RESOLVED' ? '<div class="inline-notice inline-notice--danger"><strong>!</strong><p>현재 사용 제한은 ' + escapeHtml(usageLabel(usage)) + '입니다. ' + escapeHtml(inquiry.usageGuidance && inquiry.usageGuidance.nextAction || '담당자 안내를 확인해주세요.') + '</p></div>' : ''}
+        ${danger && inquiry.status !== 'RESOLVED' ? '<div class="inline-notice inline-notice--danger"><strong>!</strong><p>현재 사용 제한은 ' + escapeHtml(usageLabel(usage)) + '입니다. ' + escapeHtml(guidanceNextAction(inquiry) || usageMessage(inquiry) || '담당자 안내를 확인해주세요.') + '</p></div>' : ''}
         <article class="content-card">
           <h3>현재 담당과 다음 단계</h3>
           <div class="current-owner"><span class="owner-avatar">${escapeHtml(owner.title.slice(0, 1))}</span><div><strong>${escapeHtml(owner.title)}</strong><small>${escapeHtml(owner.subtitle)}</small></div></div>
@@ -742,14 +888,15 @@
             <div><dt>고객 행동</dt><dd>${isCustomerActionRequired(inquiry) ? '필요' : '현재 없음'}</dd></div>
             <div><dt>방문 희망일</dt><dd>${escapeHtml(formatDateTime(inquiry.desiredVisitAt || (visit && visit.desiredAt)))}</dd></div>
             <div><dt>가상 확정일</dt><dd>${escapeHtml(formatDateTime(visit && (visit.confirmedAt || visit.scheduledAt)))}</dd></div>
-            <div><dt>방문 상태</dt><dd>${escapeHtml(visit ? statusLabel(visit.status) : '방문 미등록')}</dd></div>
-            <div><dt>마지막 변경</dt><dd>${escapeHtml(formatDateTime(inquiry.updatedAt))}</dd></div>
+            <div><dt>방문 상태</dt><dd>${escapeHtml(visit ? visitStatusLabel(visit.status) : '방문 미등록')}</dd></div>
+            <div><dt>마지막 상태 변경</dt><dd>${escapeHtml(formatDateTime(inquiry.lastStatusChangedAt || inquiry.last_status_changed_at || inquiry.updatedAt))}</dd></div>
           </dl>
         </article>
         <article class="content-card"><h3>공식 근거</h3><div class="content-stack">${renderEvidenceSet(inquiry)}</div></article>
+        ${renderCustomerInputDetails(inquiry, '고객 원문·문진 답변 펼쳐보기')}
         ${inquiry.consultationResult || inquiry.counselRecord || (visit && visit.result) ? '<article class="content-card"><h3>상담·방문 결과</h3>' + (inquiry.consultationResult || inquiry.counselRecord ? '<p><strong>상담 결과</strong><br>' + escapeHtml(inquiry.consultationResult || inquiry.counselRecord.note || inquiry.counselRecord.outcome || '상담 완료') + '</p>' : '') + (visit && visit.result ? '<p><strong>방문 결과</strong><br>' + escapeHtml(typeof visit.result === 'object' ? [visit.result.actualCause, visit.result.actions, visit.result.nextAction].filter(Boolean).join(' · ') : visit.result) + '</p>' : '') + '</article>' : ''}
         <article class="content-card"><h3>팀 설계 상태 이력</h3>${renderTimeline(inquiry)}</article>
-        <article class="content-card"><h3>최종 완료 확인</h3><p>고객 피드백: ${escapeHtml(inquiry.resolutionFeedback ? '제출 완료' : '미제출')}<br>담당자 최종 완료: ${inquiry.status === 'RESOLVED' ? '완료' : '대기'}</p></article>
+        <article class="content-card"><h3>최종 완료 확인</h3>${finalizationHtml}</article>
       </section>`;
   }
 
@@ -777,7 +924,7 @@
           <p>${escapeHtml(schedule.label || '공식 또는 팀 기준이 확보되지 않아 일정 확인이 필요합니다.')}</p>
         </article>
         ${visits.length ? '<div class="content-stack">' + visits.map(function (visit) {
-          return '<article class="content-card"><div class="content-card__header"><h3>' + escapeHtml(formatDateTime(visit.confirmedAt || visit.scheduledAt || visit.desiredAt)) + '</h3><span class="status-chip">' + escapeHtml(statusLabel(visit.status)) + '</span></div><p>문의 ' + escapeHtml(visit.inquiryId) + '<br>담당 방문기사 ' + escapeHtml(visit.technicianId || visit.assignedTechnicianId || '배정 중') + '</p>' + (visit.rescheduleRequest && visit.rescheduleRequest.status === 'PENDING' ? '<div class="inline-notice"><strong>i</strong><p>' + escapeHtml(formatDateTime(visit.rescheduleRequest.preferredAt)) + ' 일정으로 변경 요청을 검토 중입니다. 기존 확정 일정은 유지됩니다.</p></div>' : '') + (['CONFIRMED', 'SCHEDULING'].indexOf(visit.status) >= 0 ? '<button class="button button--secondary button--block" type="button" data-action="schedule-consultation" data-inquiry-id="' + escapeHtml(visit.inquiryId) + '" data-visit-id="' + escapeHtml(visit.id) + '">일정 변경 요청</button>' : '') + '</article>';
+          return '<article class="content-card"><div class="content-card__header"><h3>' + escapeHtml(formatDateTime(visit.confirmedAt || visit.scheduledAt || visit.desiredAt)) + '</h3><span class="status-chip">' + escapeHtml(visitStatusLabel(visit.status)) + '</span></div><p>문의 ' + escapeHtml(visit.inquiryId) + '<br>담당 방문기사 ' + escapeHtml(visit.technicianId || visit.assignedTechnicianId || '배정 중') + '</p><div class="inline-notice"><strong>i</strong><p>고객 화면에서는 방문 일정을 조회할 수 있습니다. 일정 조정은 담당 상담사가 확인해 안내합니다.</p></div></article>';
         }).join('') + '</div>' : '<div class="empty-state"><span class="empty-state__icon">□</span><h3>확정된 방문 일정이 없습니다.</h3><p>상담사가 방문 필요 여부를 확인한 뒤 희망일과 확정일을 각각 안내합니다.</p></div>'}
       </section>`;
   }
@@ -794,6 +941,15 @@
       if (active) button.setAttribute('aria-current', 'page');
       else button.removeAttribute('aria-current');
     });
+    var primaryButton = document.querySelector('.mobile-bottom-nav__primary[data-action="start-inquiry"]');
+    if (primaryButton) {
+      var hasActiveInquiry = inquiriesForCustomer().some(function (item) { return item.status !== 'RESOLVED' && item.status !== 'CANCELLED'; });
+      var product = currentProduct();
+      var canStartInquiry = !hasActiveInquiry && actionAllowed(null, 'START_INQUIRY', Boolean(product && productSupport(product).aiAllowed));
+      primaryButton.hidden = !canStartInquiry;
+      primaryButton.disabled = !canStartInquiry;
+      primaryButton.setAttribute('aria-hidden', canStartInquiry ? 'false' : 'true');
+    }
   }
 
   function updateSwitcher() {
@@ -922,13 +1078,39 @@
     event.preventDefault();
     var mode = event.submitter && event.submitter.value || 'submit';
     var payload = formPayload(event.target);
-    if (mode === 'submit' && !payload.symptomCodes.length && !payload.description) {
-      showToast('[REQUIRED_INPUT] 대표 증상을 선택하지 않았다면 고객 원문을 입력해주세요.', 'error');
-      event.target.querySelector('[name="description"]').focus();
-      return;
+    Array.from(event.target.querySelectorAll('.field-error')).forEach(function (node) { node.remove(); });
+    Array.from(event.target.querySelectorAll('[aria-invalid="true"]')).forEach(function (node) { node.removeAttribute('aria-invalid'); });
+    function invalidate(fieldName, message) {
+      var field = event.target.querySelector('[name="' + fieldName + '"]');
+      if (!field) return;
+      field.setAttribute('aria-invalid', 'true');
+      var error = document.createElement('small');
+      error.className = 'field-error';
+      error.textContent = message;
+      field.insertAdjacentElement('afterend', error);
+    }
+    if (mode === 'submit') {
+      var missing = [];
+      if (!payload.symptomCodes.length && !payload.description) missing.push(['description', '대표 증상을 선택하거나 고객 원문을 입력해주세요.']);
+      if (payload.symptomCodes.indexOf('LOW_FLOW') >= 0 && !payload.answers.flow) missing.push(['flow', '출수 상태를 선택해주세요.']);
+      if (payload.symptomCodes.indexOf('LEAK') >= 0 && !payload.answers.leak) missing.push(['leak', '누수 안전 확인 결과를 선택해주세요.']);
+      if (payload.symptomCodes.indexOf('TEMPERATURE') >= 0 && !payload.conditions) missing.push(['occurrenceConditions', '온도 이상이 발생한 조건을 입력해주세요.']);
+      if (missing.length) {
+        missing.forEach(function (item) { invalidate(item[0], item[1]); });
+        var firstInvalid = event.target.querySelector('[aria-invalid="true"]');
+        if (firstInvalid) {
+          firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          firstInvalid.focus({ preventScroll: true });
+        }
+        showToast('[REQUIRED_INPUT] 필수 항목을 확인해주세요.', 'error');
+        return;
+      }
     }
     if (mode === 'draft') {
-      if (dispatch(app.questionnaireSessionId ? 'SAVE_QUESTIONNAIRE' : 'SAVE_DRAFT', payload, '임시 저장했습니다.')) setRoute('home');
+      var scrollTop = main.scrollTop;
+      if (dispatch(app.questionnaireSessionId ? 'SAVE_QUESTIONNAIRE' : 'SAVE_DRAFT', payload, '임시 저장했습니다.')) {
+        window.requestAnimationFrame(function () { main.scrollTop = scrollTop; });
+      }
       return;
     }
     if (app.questionnaireSessionId) {
@@ -959,14 +1141,29 @@
     var inquiry = currentInquiry();
     var data = new FormData(event.target);
     var result = String(data.get('result') || '');
+    var actionPerformedValue = String(data.get('actionPerformed') || '');
+    if (!actionPerformedValue) {
+      showToast('[REQUIRED_INPUT] 조치 수행 여부를 선택해주세요.', 'error');
+      return;
+    }
     if (!result) {
       showToast('[REQUIRED_INPUT] 조치 결과를 선택해주세요.', 'error');
+      return;
+    }
+    if ((actionPerformedValue === 'NO') !== (result === 'NOT_PERFORMED')) {
+      showToast('[INPUT-VALIDATION-01] 미수행을 선택했다면 결과도 수행하지 않음으로 맞춰주세요.', 'error');
+      return;
+    }
+    var performedAction = String(data.get('performedAction') || '').trim();
+    if (!performedAction) {
+      showToast('[REQUIRED_INPUT] 수행한 조치 또는 미수행 사유를 입력해주세요.', 'error');
       return;
     }
     var payload = {
       inquiryId: inquiry.id,
       actionResult: result,
-      performedAction: String(data.get('performedAction') || '').trim()
+      actionPerformed: actionPerformedValue === 'YES',
+      performedAction: performedAction
     };
     if (result === 'RESOLVED') {
       if (dispatch('CUSTOMER_REPORTED_SELF_RESOLVED', payload, '해결 결과가 저장되었습니다.')) setRoute('detail');
@@ -1016,7 +1213,7 @@
       productId: productId,
       productCode: productCode,
       manualModel: manualModelValue,
-      modelName: productCode === 'WPUJAC104DWH' ? '초소형 플러스 직수 정수기' : productCode === 'WPUIAC425SNW' ? '원코크 플러스 얼음물 정수기' : '고객 등록 정수기',
+      modelName: productCode === 'WPUJAC104DWH' ? '초소형 플러스 직수 정수기' : '고객 등록 정수기',
       startedAt: String(data.get('startedAt') || ''),
       managementType: String(data.get('managementType') || 'VISIT'),
       installedArea: String(data.get('installedArea') || '').trim()
@@ -1039,37 +1236,6 @@
     }
   }
 
-  function openRescheduleDialog(actionButton) {
-    var visit = list('visits').find(function (item) { return item.id === actionButton.dataset.visitId; });
-    if (!visit) {
-      showToast('[NO-DATA-01] 방문 일정을 찾을 수 없습니다.', 'error');
-      return;
-    }
-    var form = document.getElementById('reschedule-form');
-    form.reset();
-    form.elements.inquiryId.value = visit.inquiryId;
-    form.elements.visitId.value = visit.id;
-    form.elements.preferredAt.value = toLocalInput(visit.confirmedAt || visit.scheduledAt || visit.desiredAt);
-    form.elements.preferredAt.min = toLocalInput(new Date());
-    document.getElementById('current-visit-time').textContent = formatDateTime(visit.confirmedAt || visit.scheduledAt || visit.desiredAt);
-    rescheduleDialog.showModal();
-  }
-
-  function handleRescheduleSubmit(event) {
-    event.preventDefault();
-    var data = new FormData(event.target);
-    var payload = {
-      inquiryId: String(data.get('inquiryId') || ''),
-      visitId: String(data.get('visitId') || ''),
-      preferredAt: String(data.get('preferredAt') || ''),
-      reason: String(data.get('reason') || '')
-    };
-    if (dispatch('REQUEST_VISIT_RESCHEDULE', payload, '방문 일정 변경 요청을 접수했습니다.')) {
-      rescheduleDialog.close();
-      setRoute('schedule');
-    }
-  }
-
   function handleClick(event) {
     var closeButton = event.target.closest('[data-dialog-close]');
     if (closeButton) {
@@ -1086,7 +1252,12 @@
     if (!actionButton) return;
     var action = actionButton.dataset.action;
     if (action === 'start-inquiry') startFlow('START_INQUIRY');
-    else if (action === 'start-precheck') startFlow('START_CARE_PRECHECK');
+    else if (action === 'start-precheck') {
+      var resumable = questionnairesForCustomer().find(function (item) { return !item.inquiryId && ['UNANSWERED', 'IN_PROGRESS'].indexOf(item.questionnaireStatus) >= 0; });
+      if (resumable) { app.questionnaireSessionId = resumable.id; app.inquiryId = ''; setRoute('precheck'); }
+      else startFlow('START_CARE_PRECHECK');
+    }
+    else if (action === 'resume-precheck') { app.questionnaireSessionId = actionButton.dataset.questionnaireId; app.inquiryId = ''; setRoute('precheck'); }
     else if (action === 'start-linked-inquiry') startFlow('START_INQUIRY', actionButton.dataset.questionnaireId);
     else if (action === 'request-product-support') {
       var supportProduct = currentProduct();
@@ -1123,9 +1294,6 @@
       } else if (dispatch('CUSTOMER_REPORTED_UNRESOLVED', { inquiryId: feedbackInquiry.id, resolved: false, feedback: 'UNRESOLVED' }, '미해결 상태를 전달했습니다.')) {
         setRoute('detail');
       }
-    } else if (action === 'schedule-consultation') {
-      app.inquiryId = actionButton.dataset.inquiryId;
-      openRescheduleDialog(actionButton);
     } else if (action === 'toggle-evidence-detail') {
       var detail = document.getElementById(actionButton.getAttribute('aria-controls'));
       if (detail) {
@@ -1142,7 +1310,6 @@
     else if (event.target.id === 'action-result-form') handleActionResult(event);
     else if (event.target.id === 'safety-action-form') handleSafetyAction(event);
     else if (event.target.id === 'product-form') handleProductSubmit(event);
-    else if (event.target.id === 'reschedule-form') handleRescheduleSubmit(event);
   }
 
   function init() {
