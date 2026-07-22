@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#083f39">
+  <meta name="description" content="워터케어 ONE 방문기사 태블릿 업무 앱">
+  <title>워터케어 ONE · 방문기사</title>
+  <link rel="stylesheet" href="assets/css/fix-base.css">
+  <link rel="stylesheet" href="assets/css/technician-tablet.css">
+</head>
+<body>
+  <a class="skip-link" href="#technician-main">본문 바로가기</a>
+
+  <div class="technician-shell">
+    <header class="app-header">
+      <a class="brand" href="index.html" aria-label="워터케어 ONE 역할 선택 홈으로 이동">
+        <span class="brand-mark" aria-hidden="true">W</span>
+        <span class="brand-copy"><strong>워터케어 ONE</strong><small>Field Care</small></span>
+      </a>
+
+      <div class="header-context" aria-label="현재 사용자">
+        <span class="connection-state"><i aria-hidden="true"></i>현장 업무 연결됨</span>
+        <strong>오세훈 기사</strong>
+      </div>
+
+      <div class="header-actions">
+        <a class="home-button" href="index.html" aria-label="역할 선택 홈으로 돌아가기">
+          <span aria-hidden="true">⌂</span><span>홈</span>
+        </a>
+        <button id="notification-toggle" class="notification-button" type="button"
+                aria-label="업무 알림 열기" aria-haspopup="dialog"
+                aria-controls="notification-panel" aria-expanded="false">
+          <span aria-hidden="true">●</span>
+          <b id="notification-badge" hidden>0</b>
+        </button>
+        <span class="avatar" aria-hidden="true">오</span>
+      </div>
+    </header>
+
+    <main id="technician-main" class="app-main" tabindex="-1">
+      <div id="technician-root" aria-live="polite" aria-busy="true">
+        <section class="loading-card" aria-label="방문 업무 불러오는 중">
+          <span class="loading-dot" aria-hidden="true"></span>
+          <p>배정된 방문 업무를 불러오고 있습니다.</p>
+        </section>
+      </div>
+    </main>
+
+    <nav class="bottom-navigation" aria-label="방문기사 업무 화면">
+      <button type="button" class="bottom-nav-item is-active" data-tech-view="list" aria-current="page">
+        <span aria-hidden="true">▤</span><span>업무 목록</span>
+      </button>
+      <button type="button" class="bottom-nav-item" data-tech-view="detail">
+        <span aria-hidden="true">◇</span><span>사전 점검</span>
+      </button>
+      <button type="button" class="bottom-nav-item" data-tech-view="result">
+        <span aria-hidden="true">✓</span><span>방문 결과</span>
+      </button>
+    </nav>
+  </div>
+
+  <section id="notification-panel" class="notification-drawer" role="dialog" aria-modal="false"
+           aria-labelledby="notification-title" tabindex="-1" hidden>
+    <header>
+      <div>
+        <p class="eyebrow">FIELD NOTIFICATIONS</p>
+        <h2 id="notification-title">업무 알림</h2>
+        <p id="notification-summary">새 알림을 확인하세요.</p>
+      </div>
+      <button id="notification-close" class="icon-close" type="button" aria-label="업무 알림 닫기">×</button>
+    </header>
+    <div id="notification-list" class="notification-list"></div>
+    <footer>알림을 선택하면 연결된 방문 업무를 엽니다.</footer>
+  </section>
+  <div id="drawer-backdrop" class="drawer-backdrop" hidden></div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="assets/js/fix-data.js"></script>
+  <script src="assets/js/fix-store.js"></script>
+  <script src="assets/js/fix-common.js"></script>
+  <script src="assets/js/technician-app-v6.js"></script>
+</body>
+</html>
