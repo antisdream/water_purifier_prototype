@@ -7,7 +7,6 @@
   var root = document.getElementById("operator-app");
   var filters = { period: "ALL", model: "ALL", management: "ALL", handler: "ALL", symptom: "ALL", risk: "ALL", priority: "ALL", status: "ALL", aiState: "ALL", visitStatus: "ALL", supportStatus: "ALL", outcome: "ALL" };
   var notificationOpen = false;
-  var seenNotificationIds = {};
   var state;
 
   if (!root) return;
@@ -59,7 +58,12 @@
   }
 
   function supportStatusLabel(code) {
-    return ({ SUPPORTED: "MVP 지원", EXPANSION: "후속 확장", UNSUPPORTED: "지원 범위 밖", ARCHIVED: "보관 모델", INCOMPLETE: "제품 정보 불완전" })[code] || code || "지원 상태 미확인";
+    return ({ SUPPORTED: "MVP 지원", EXPANSION: "후속 확장", UNSUPPORTED: "지원 범위 밖", REMOVED_LEGACY: "제거된 레거시", INCOMPLETE: "제품 정보 불완전" })[code] || code || "지원 상태 미확인";
+  }
+
+  function isRemovedLegacy(product) {
+    var code = String(product && product.productCode || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return code === "WPUIAC506" || String(product && (product.scopeRole || product.supportStatus) || "").toUpperCase() === "REMOVED_LEGACY";
   }
 
   function aiOutcomeLabel(code) {
@@ -116,8 +120,9 @@
     var cutoff = periodDays == null ? null : reference.getTime() - periodDays * 86400000;
     return (state.inquiries || []).filter(function (inquiry) {
       var product = productFor(inquiry);
+      if (isRemovedLegacy(product)) return false;
       var handlers = [inquiry.assignedCounselorId, inquiry.assignedTechnicianId].filter(Boolean);
-      var updated = new Date(inquiry.updatedAt || inquiry.createdAt || 0).getTime();
+      var updated = new Date(inquiry.lastStatusChangedAt || inquiry.updatedAt || inquiry.createdAt || 0).getTime();
       if (cutoff != null && updated < cutoff) return false;
       if (filters.model !== "ALL" && product.productCode !== filters.model) return false;
       if (filters.management !== "ALL" && product.managementType !== filters.management) return false;
@@ -141,6 +146,7 @@
     var cutoff = periodDays == null ? null : reference.getTime() - periodDays * 86400000;
     return (state.productSupportRequests || []).filter(function (request) {
       var product = (state.products || []).find(function (item) { return item.id === request.productId; }) || {};
+      if (isRemovedLegacy(product)) return false;
       var created = new Date(request.updatedAt || request.createdAt || 0).getTime();
       if (cutoff != null && created < cutoff) return false;
       if (filters.model !== "ALL" && product.productCode !== filters.model) return false;
@@ -168,6 +174,14 @@
     return details.join(" · ");
   }
 
+  function usageGuidanceView(inquiry) {
+    var legacy = inquiry && inquiry.usageGuidance || {};
+    return {
+      status: inquiry && inquiry.usageGuidanceStatus || legacy.usageGuidanceStatus || legacy.usageStatus || "PENDING_CONSULTATION",
+      basis: inquiry && inquiry.guidanceBasis || legacy.guidanceBasis || legacy.decisionBasis || "근거 확인 필요"
+    };
+  }
+
   function normalizedExceptionType(item) {
     var type = String(item.type || item.errorCode || "OPERATION_EXCEPTION").toUpperCase();
     if (type === "EVIDENCE_SEARCH_FAILED" || type.indexOf("NO_EVIDENCE") >= 0) return "NO_EVIDENCE";
@@ -180,14 +194,23 @@
 
   function operationalExceptions(inquiries, supportRequests) {
     var inquiryIds = inquiries.map(function (item) { return item.id; });
-    var productIds = inquiries.map(function (item) { return item.productId; }).concat((supportRequests || []).map(function (item) { return item.productId; }));
+    var productIds = (state.products || []).filter(function (product) {
+      if (isRemovedLegacy(product)) return false;
+      if (filters.model !== "ALL" && product.productCode !== filters.model) return false;
+      if (filters.management !== "ALL" && product.managementType !== filters.management) return false;
+      return true;
+    }).map(function (item) { return item.id; }).concat(inquiries.map(function (item) { return item.productId; }), (supportRequests || []).map(function (item) { return item.productId; }));
     var rows = [];
     var reference = referenceTime();
 
     (state.products || []).forEach(function (product) {
       if (productIds.indexOf(product.id) < 0) return;
-      if (!product.careSchedule || product.careSchedule.status === "CHECK_REQUIRED" || product.careSchedule.status === "UNCALCULATED") {
-        rows.push({ type: "CARE_DATE_UNCALCULATED", target: product.id, reason: product.careSchedule && product.careSchedule.note || "다음 케어 일정이 산정되지 않았습니다.", lastStage: "CARE_SCHEDULE", owner: "운영 담당자", changedAt: product.lastCareAt });
+      if (isRemovedLegacy(product)) return;
+      var care = product.careSchedule || {};
+      var nextCare = care.nextCareDate || care.nextCareAt || care.nextDate || care.plannedAt;
+      var careUnconfirmed = !nextCare || ["CHECK_REQUIRED", "UNCALCULATED", "PLANNING", "CONFIRMATION_REQUIRED"].indexOf(care.nextCareStatus || care.status) >= 0;
+      if (careUnconfirmed) {
+        rows.push({ type: "CARE_DATE_UNCALCULATED", target: product.id, reason: care.note || "공식 운영 기준 또는 팀 승인 규칙에 따른 다음 케어 일정이 확정되지 않았습니다.", details: (nextCare ? "next_care_date " + formatDateTime(nextCare) : "next_care_date 없음") + " · " + (care.nextCareBasis || care.sourceType || "기준 미확정"), lastStage: care.nextCareStatus || care.status || "CONFIRMATION_REQUIRED", owner: "케어 운영 기준 확인", changedAt: care.updatedAt || product.lastCareDate || product.lastCareAt });
       }
       if (product.supportStatus && product.supportStatus !== "SUPPORTED") {
         rows.push({ type: "PRODUCT_VALIDATION_FAILED", target: product.id, reason: product.supportMessage || "기본 MVP 지원 범위가 아닌 제품입니다.", details: (product.productCode || "제품 코드 미확인") + " · " + supportStatusLabel(product.supportStatus), lastStage: "CONSULTATION_REQUIRED", owner: "상담원·운영 담당자", changedAt: product.updatedAt || product.installedAt });
@@ -208,9 +231,11 @@
     });
 
     inquiries.forEach(function (inquiry) {
-      var ageHours = (reference.getTime() - new Date(inquiry.updatedAt || inquiry.createdAt || reference).getTime()) / 3600000;
-      if (["RESOLVED", "CANCELLED"].indexOf(inquiry.status) < 0 && ageHours >= 48) rows.push({ type: "PROCESSING_DELAY", target: inquiry.id, inquiryId: inquiry.id, reason: "마지막 상태 변경 후 48시간 이상 경과했습니다.", lastStage: inquiry.status, owner: ownerLabel(inquiry), changedAt: inquiry.updatedAt });
-      if (inquiry.aiOutcome === "NO_EVIDENCE" || inquiry.officialSearchFailed || inquiry.evidenceStatus === "NOT_FOUND") rows.push({ type: "NO_EVIDENCE", target: inquiry.id, inquiryId: inquiry.id, reason: "현재 제품·증상 범위의 검증된 공식 근거가 없어 상담으로 전환되었습니다.", details: "문의 " + statusLabel(inquiry.status) + " · 사용 안내 " + ((inquiry.usageGuidance && inquiry.usageGuidance.usageStatus) || "PENDING_CONSULTATION"), lastStage: inquiry.aiState || inquiry.status, owner: ownerLabel(inquiry), changedAt: inquiry.updatedAt });
+      var statusChangedAt = inquiry.lastStatusChangedAt || inquiry.updatedAt || inquiry.createdAt;
+      var ageHours = (reference.getTime() - new Date(statusChangedAt || reference).getTime()) / 3600000;
+      var usage = usageGuidanceView(inquiry);
+      if (["RESOLVED", "CANCELLED"].indexOf(inquiry.status) < 0 && ageHours >= 48) rows.push({ type: "PROCESSING_DELAY", target: inquiry.id, inquiryId: inquiry.id, reason: "합성 시연 기준으로 마지막 상태 변경 후 48시간 이상 경과했습니다. 실제 SLA 기준은 확정 전입니다.", lastStage: inquiry.status, owner: ownerLabel(inquiry), changedAt: statusChangedAt });
+      if (inquiry.aiOutcome === "NO_EVIDENCE" || inquiry.officialSearchFailed || inquiry.evidenceStatus === "NOT_FOUND") rows.push({ type: "NO_EVIDENCE", target: inquiry.id, inquiryId: inquiry.id, reason: "현재 제품·증상 범위의 검증된 공식 근거가 없어 상담으로 전환되었습니다.", details: "문의 " + statusLabel(inquiry.status) + " · 사용 안내 " + usage.status + " · 판단 근거 " + usage.basis, lastStage: inquiry.aiState || inquiry.status, owner: ownerLabel(inquiry), changedAt: inquiry.updatedAt });
       if (inquiry.aiState === "FAILED" || inquiry.failedStage || Number(inquiry.aiFailureCount || 0) > 0) rows.push({ type: "AI_PROCESSING_FAILED", target: inquiry.id, inquiryId: inquiry.id, reason: "AI 처리 실패 이력을 확인하고 실패 단계부터 재시도하거나 상담으로 전환해야 합니다.", details: failureDetails(inquiry), lastStage: inquiry.aiState || inquiry.status, owner: ownerLabel(inquiry), changedAt: inquiry.updatedAt });
       if (inquiry.reanalysisRequired) rows.push({ type: "PRODUCT_REANALYSIS_REQUIRED", target: inquiry.id, inquiryId: inquiry.id, reason: "제품 모델 변경으로 기존 근거가 무효화되어 재분석이 필요합니다.", details: "AI " + aiStatusLabel(inquiry.aiState), lastStage: inquiry.aiState || inquiry.status, owner: ownerLabel(inquiry), changedAt: inquiry.updatedAt });
     });
@@ -311,14 +336,14 @@
   }
 
   function productSupportPanel(requests) {
-    return '<section id="operator-support-requests" class="v6-panel" style="margin-top:16px"><div class="v6-panel-head"><div><h2>제품 지원 범위 상담 요청</h2><p>미지원·후속 확장·보관·정보 불완전 제품의 상담 연결 현황</p></div><div class="v6-exception-summary">' + chip(requests.length + "건", requests.length ? "warning" : "success") + chip("조회 전용", "outline") + '</div></div>' +
+    return '<section id="operator-support-requests" class="v6-panel" style="margin-top:16px"><div class="v6-panel-head"><div><h2>제품 지원 범위 상담 요청</h2><p>미지원·후속 확장·정보 불완전 제품의 상담 연결 현황</p></div><div class="v6-exception-summary">' + chip(requests.length + "건", requests.length ? "warning" : "success") + chip("조회 전용", "outline") + '</div></div>' +
       (requests.length ? '<div class="v6-table-wrap"><table class="v6-table"><thead><tr><th>요청</th><th>고객·제품</th><th>검증 상태</th><th>상담 요청 사유</th><th>접수 시각</th></tr></thead><tbody>' + requests.map(function (request) {
         var product = (state.products || []).find(function (item) { return item.id === request.productId; }) || {};
         var customer = (state.customers || []).find(function (item) { return item.id === request.customerId; }) || {};
         var supportStatus = request.validationStatus || product.supportStatus || "INCOMPLETE";
         return '<tr><td><strong>' + escape(request.id) + '</strong><small>' + escape(request.status || "CONSULTATION_REQUIRED") + '</small></td>' +
           '<td><strong>' + escape(customer.name || customer.displayName || request.customerId || "고객 미확인") + '</strong><small>' + escape(product.productCode || request.productId || "제품 미확인") + '</small></td>' +
-          '<td>' + chip(supportStatusLabel(supportStatus), supportStatus === "ARCHIVED" || supportStatus === "UNSUPPORTED" ? "danger" : "warning") + '</td>' +
+          '<td>' + chip(supportStatusLabel(supportStatus), supportStatus === "REMOVED_LEGACY" || supportStatus === "UNSUPPORTED" ? "danger" : "warning") + '</td>' +
           '<td><strong>' + escape(request.reason || product.supportMessage || "제품 지원 범위 확인 필요") + '</strong></td>' +
           '<td>' + escape(formatDateTime(request.updatedAt || request.createdAt)) + '</td></tr>';
       }).join("") + '</tbody></table></div>' : '<div class="v6-empty"><span>✓</span><strong>접수된 제품 지원 범위 상담 요청이 없습니다.</strong><p>지원 범위 밖 제품 요청이 접수되면 이 영역에 표시됩니다.</p></div>') + '</section>';
@@ -335,17 +360,17 @@
     var exceptions = operationalExceptions(inquiries, supportRequests);
     var symptomValues = [];
     (state.inquiries || []).forEach(function (item) { (item.symptomCodes || []).forEach(function (code) { symptomValues.push(code); }); });
-    var modelValues = (state.products || []).map(function (item) { return item.productCode; });
+    var modelValues = (state.products || []).filter(function (item) { return !isRemovedLegacy(item); }).map(function (item) { return item.productCode; });
     var managementValues = (state.products || []).map(function (item) { return item.managementType; });
     var handlerValues = (state.staff || []).filter(function (item) { return item.role === "COUNSELOR" || item.role === "TECHNICIAN"; });
     var outcomeValues = Array.from(new Set((state.inquiries || []).map(outcomeCode)));
     var aiStateValues = (state.inquiries || []).map(function (item) { return item.aiState || "IDLE"; });
     var visitStatusValues = ["NOT_CREATED"].concat((state.visits || []).map(function (item) { return item.status; }));
-    var supportStatusValues = (state.products || []).map(function (item) { return item.supportStatus || "INCOMPLETE"; }).concat((state.productSupportRequests || []).map(function (item) { return item.validationStatus; }));
+    var supportStatusValues = (state.products || []).filter(function (item) { return !isRemovedLegacy(item); }).map(function (item) { return item.supportStatus || "INCOMPLETE"; }).concat(supportRequests.map(function (item) { return item.validationStatus; }));
 
     document.getElementById("operator-exception-count").textContent = String(exceptions.length);
     root.setAttribute("aria-busy", "false");
-    root.innerHTML = '<header class="v6-page-head" id="operator-summary"><div class="v6-page-head__copy"><small>ADMIN-01 · P1 READ ONLY</small><h1>고객케어 운영 대시보드</h1><p>WPUJAC104DWH 합성 문의의 상담·방문·완료 흐름과 운영 예외를 조건별로 조회합니다. 이 화면에서는 문의 상태를 변경할 수 없습니다.</p></div><div class="v6-page-head__meta"><span>집계 기준 · ' + escape(formatDateTime(referenceTime())) + '</span><span>화면설계 FIX v6</span><span>조회자 · 장민서</span></div></header>' +
+    root.innerHTML = '<header class="v6-page-head" id="operator-summary"><div class="v6-page-head__copy"><small>ADMIN-01 · P1 READ ONLY</small><h1>고객케어 운영 대시보드</h1><p>WPUJAC104DWH 합성 문의의 상담·방문·완료 흐름과 운영 예외를 조건별로 조회합니다. 이 화면에서는 문의 상태를 변경할 수 없습니다.</p></div><div class="v6-page-head__meta"><span>집계 기준 · ' + escape(formatDateTime(referenceTime())) + '</span><span>화면설계 v13</span><span>조회자 · 장민서</span></div></header>' +
       '<div class="v6-readonly-notice"><b>조회 전용</b><span>필터와 집계는 현재 공유 상태를 읽어서 계산하며, 승인·배정·완료 등 상태 변경 작업을 제공하지 않습니다.</span></div>' +
       '<section class="v6-panel v6-operator-filters" aria-label="운영 현황 조회 필터"><label class="v6-filter">기간<select data-operator-filter="period"><option value="ALL">전체 기간</option><option value="1"' + (filters.period === "1" ? " selected" : "") + '>최근 24시간</option><option value="7"' + (filters.period === "7" ? " selected" : "") + '>최근 7일</option><option value="30"' + (filters.period === "30" ? " selected" : "") + '>최근 30일</option></select></label>' +
       '<label class="v6-filter">제품 모델<select data-operator-filter="model"><option value="ALL">전체 모델</option>' + uniqueOptions(modelValues) + '</select></label>' +
@@ -361,7 +386,7 @@
       '<label class="v6-filter">처리 결과<select data-operator-filter="outcome"><option value="ALL">전체 결과</option>' + uniqueOptions(outcomeValues, outcomeLabel) + '</select></label>' +
       '<div class="v6-operator-filters__summary"><span>선택 조건 결과 <b>' + total + '</b>건 · 필터 변경 즉시 다시 계산</span><button class="v6-button v6-button--secondary" type="button" data-reset-operator-filters>필터 초기화</button></div></section>' +
       '<section class="v6-metric-grid" aria-label="운영 핵심 지표">' + metricCard("조회 문의", total, "현재 필터 기준", "", "◎") + metricCard("상담 전환", counselCount, percentage(counselCount, total) + "% · 담당 상담 연결", "warning", "↗") + metricCard("방문 전환", visitCount, percentage(visitCount, total) + "% · 방문 객체 연결", "", "□") + metricCard("최종 완료", completedCount, percentage(completedCount, total) + "% · RESOLVED", "safe", "✓") + '</section>' +
-      '<div class="v6-operator-grid"><section class="v6-panel"><div class="v6-panel-head"><div><h2>주요 증상 유형</h2><p>복수 증상은 각각 1건으로 집계</p></div><span>' + total + '건 기준</span></div><div class="v6-chart-body">' + symptomChart(inquiries) + '</div></section><section class="v6-panel"><div class="v6-panel-head"><div><h2>문의 처리 상태</h2><p>FIX v6 상태 코드 기준</p></div><span>' + total + '건</span></div><div class="v6-chart-body">' + statusChart(inquiries) + '</div></section></div>' +
+      '<div class="v6-operator-grid"><section class="v6-panel"><div class="v6-panel-head"><div><h2>주요 증상 유형</h2><p>복수 증상은 각각 1건으로 집계</p></div><span>' + total + '건 기준</span></div><div class="v6-chart-body">' + symptomChart(inquiries) + '</div></section><section class="v6-panel"><div class="v6-panel-head"><div><h2>문의 처리 상태</h2><p>화면설계 v13 상태 코드 기준</p></div><span>' + total + '건</span></div><div class="v6-chart-body">' + statusChart(inquiries) + '</div></section></div>' +
       '<section class="v6-panel" style="margin-bottom:16px"><div class="v6-panel-head"><div><h2>문의·방문·AI 상태 분리 조회</h2><p>세 상태 흐름을 서로 다른 필드로 확인하며 운영 화면에서는 변경할 수 없습니다.</p></div><span>' + total + '건</span></div>' + separatedStateTable(inquiries) + '</section>' +
       '<section id="operator-flow" class="v6-panel"><div class="v6-panel-head"><div><h2>상담·방문 전환 집계</h2><p>고객 입력부터 최종 완료까지의 현재 누적 건수</p></div><span>중복 경로 포함</span></div><div class="v6-flow-grid"><article class="v6-flow-card"><span>전체 문의</span><strong>' + total + '</strong><small>100%</small></article><article class="v6-flow-card"><span>상담 연결</span><strong>' + counselCount + '</strong><small>' + percentage(counselCount, total) + '%</small></article><article class="v6-flow-card"><span>방문 연결</span><strong>' + visitCount + '</strong><small>' + percentage(visitCount, total) + '%</small></article><article class="v6-flow-card"><span>최종 완료</span><strong>' + completedCount + '</strong><small>' + percentage(completedCount, total) + '%</small></article></div></section>' +
       productSupportPanel(supportRequests) +
@@ -380,14 +405,14 @@
 
   function renderNotifications() {
     var items = operatorNotifications();
-    var unread = items.filter(function (item) { return !item.read && !seenNotificationIds[item.id]; }).length;
+    var unread = items.filter(function (item) { return !item.read; }).length;
     var badge = document.getElementById("operator-notification-count");
     var toggle = document.getElementById("operator-notification-toggle");
     if (badge) { badge.textContent = String(unread); badge.hidden = unread === 0; }
     if (toggle) toggle.setAttribute("aria-label", "운영 알림, 읽지 않은 알림 " + (unread ? unread + "개" : "없음"));
     var list = document.getElementById("operator-notification-list");
     if (!list) return;
-    list.innerHTML = items.length ? items.map(function (item) { return '<button class="v6-notification-item' + (!item.read && !seenNotificationIds[item.id] ? " is-unread" : "") + '" type="button" data-operator-notification-id="' + escape(item.id || "") + '" data-operator-notification-inquiry="' + escape(item.inquiryId || "") + '" data-operator-notification-support="' + escape(item.productSupportRequestId || "") + '"><span>!</span><div><strong>' + escape(item.title) + '</strong><p>' + escape(item.message) + '</p><small>' + escape(formatDateTime(item.createdAt)) + '</small></div></button>'; }).join("") : '<div class="v6-notification-empty">새 운영 알림이 없습니다.</div>';
+    list.innerHTML = items.length ? items.map(function (item) { return '<button class="v6-notification-item' + (!item.read ? " is-unread" : "") + '" type="button" data-operator-notification-id="' + escape(item.id || "") + '" data-operator-notification-inquiry="' + escape(item.inquiryId || "") + '" data-operator-notification-support="' + escape(item.productSupportRequestId || "") + '"><span>!</span><div><strong>' + escape(item.title) + '</strong><p>' + escape(item.message) + '</p><small>' + escape(formatDateTime(item.createdAt)) + '</small></div></button>'; }).join("") : '<div class="v6-notification-empty">새 운영 알림이 없습니다.</div>';
   }
 
   function setNotificationPanel(open) {
@@ -418,7 +443,16 @@
     if (event.target.closest("[data-close-notifications]")) { setNotificationPanel(false); return; }
     var item = event.target.closest("[data-operator-notification-id]");
     if (!item) return;
-    seenNotificationIds[item.dataset.operatorNotificationId] = true;
+    var notificationId = item.dataset.operatorNotificationId;
+    var notification = (state.notifications || []).find(function (candidate) { return candidate.id === notificationId; });
+    if (notification && !notification.read) {
+      try {
+        Store.dispatch("MARK_NOTIFICATION_READ", { notificationId: notificationId, idempotencyKey: "MARK_NOTIFICATION_READ:" + notificationId + ":" + Date.now() }, ACTOR);
+        state = Store.getState();
+      } catch (error) {
+        /* 조회 전용 화면은 알림 읽음 실패 시에도 업무 데이터 조회를 유지합니다. */
+      }
+    }
     var inquiry = (state.inquiries || []).find(function (candidate) { return candidate.id === item.dataset.operatorNotificationInquiry; });
     var supportRequest = (state.productSupportRequests || []).find(function (candidate) { return candidate.id === item.dataset.operatorNotificationSupport; });
     if (inquiry) {
