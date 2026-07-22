@@ -77,15 +77,15 @@
         <button class="dialog-close" type="button" data-dialog-close aria-label="제품 수정 닫기">×</button>
       </div>
       <input id="product-edit-id" name="productId" type="hidden">
-      <div class="fixed-model-callout">
-        <span>지원 모델</span><strong>SK매직 WPU-JAC104D</strong><code>WPUJAC104DWH</code>
-      </div>
+      <div class="fixed-model-callout"><span>지원 범위 자동 검증</span><strong>제품 코드를 기준으로 MVP·후속 확장·보관·미지원 상태를 구분합니다.</strong><small>미지원 제품은 AI·RAG를 실행하지 않고 제품 상담으로 연결됩니다.</small></div>
+      <label class="field"><span>제품 코드</span><input name="productCode" list="supported-product-codes" maxlength="40" autocomplete="off" required placeholder="예: WPUJAC104DWH"><datalist id="supported-product-codes"><option value="WPUJAC104DWH">WPU-JAC104D · MVP 1순위</option><option value="WPUIAC425SNW">원코크 플러스 얼음물 정수기 · 후속 확장</option><option value="WPUIAC506">보관 모델</option></datalist></label>
+      <label class="field"><span>사용설명서 모델명</span><input name="manualModel" maxlength="40" autocomplete="off" required placeholder="예: WPU-JAC104D"></label>
       <label class="field"><span>사용 시작일</span><input name="startedAt" type="date" required></label>
       <label class="field"><span>관리 유형</span><select name="managementType" required><option value="VISIT">방문관리</option></select></label>
       <label class="field"><span>설치 공간</span><input name="installedArea" maxlength="40" required></label>
       <div class="dialog-actions">
         <button class="button button--secondary" type="button" data-dialog-close>취소</button>
-        <button class="button button--primary" type="submit">저장</button>
+        <button class="button button--primary" id="product-submit-label" type="submit">저장</button>
       </div>
     </form>
   </dialog>
